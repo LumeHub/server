@@ -5,7 +5,6 @@ use application::{SceneRuntime, SceneSnapshot, StateEventBus};
 use effects::BuiltinEffect;
 use rumqttc::{AsyncClient, ConnectReturnCode, Event, MqttOptions, Packet, QoS};
 use store::Store;
-use tokio::sync::broadcast::error::RecvError;
 
 use crate::config::MqttConfig;
 use crate::ctx::Ctx;
@@ -29,14 +28,8 @@ pub async fn run(
         let snap_tx = snap_tx.clone();
         let mut bus_rx = event_bus.subscribe();
         tokio::spawn(async move {
-            loop {
-                match bus_rx.recv().await {
-                    Ok(snapshot) => {
-                        let _ = snap_tx.send(snapshot);
-                    }
-                    Err(RecvError::Lagged(_)) => continue,
-                    Err(RecvError::Closed) => break,
-                }
+            while let Some(snapshot) = bus_rx.recv().await {
+                let _ = snap_tx.send(snapshot);
             }
         });
     }
