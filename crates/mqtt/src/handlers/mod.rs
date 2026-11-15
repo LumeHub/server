@@ -4,12 +4,11 @@ pub mod effects;
 pub mod scenes;
 pub mod zones;
 
-use rumqttc::Publish;
-
 use crate::ctx::Ctx;
+use crate::transport::Message;
 
-pub(crate) async fn dispatch(ctx: &Ctx, p: Publish) {
-    route(ctx, p.topic.as_str(), &p.payload).await;
+pub(crate) async fn dispatch(ctx: &Ctx, msg: Message) {
+    route(ctx, &msg.topic, &msg.payload).await;
 }
 
 pub async fn route(ctx: &Ctx, topic: &str, payload: &[u8]) {

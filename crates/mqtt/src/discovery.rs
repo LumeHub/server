@@ -1,13 +1,13 @@
 use effects::BuiltinEffect;
-use rumqttc::{AsyncClient, QoS};
 use serde_json::json;
 use store::Store;
 
 use crate::config::MqttConfig;
 use crate::topics::Topics;
+use crate::transport::MqttClient;
 
 pub async fn publish_ha_discovery(
-    client: &AsyncClient,
+    client: &MqttClient,
     config: &MqttConfig,
     store: &Store,
     builtins: &[BuiltinEffect],
@@ -69,10 +69,10 @@ pub async fn publish_ha_discovery(
     .await;
 }
 
-async fn publish_discovery_config(client: &AsyncClient, topic: &str, payload: &serde_json::Value) {
+async fn publish_discovery_config(client: &MqttClient, topic: &str, payload: &serde_json::Value) {
     match serde_json::to_vec(payload) {
         Ok(bytes) => {
-            if let Err(e) = client.publish(topic, QoS::AtLeastOnce, true, bytes).await {
+            if let Err(e) = client.publish(topic, true, bytes).await {
                 eprintln!("[mqtt] discovery publish error on {topic}: {e}");
             }
         }

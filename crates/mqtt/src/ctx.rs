@@ -2,14 +2,14 @@ use std::sync::{Arc, Mutex};
 
 use application::SceneRuntime;
 use effects::BuiltinEffect;
-use rumqttc::AsyncClient;
 use store::Store;
 
 use crate::config::MqttConfig;
 use crate::topics::Topics;
+use crate::transport::MqttClient;
 
 pub struct Ctx {
-    pub client: AsyncClient,
+    pub client: MqttClient,
     pub topics: Topics,
     pub config: MqttConfig,
     pub runtime: Arc<dyn SceneRuntime>,

@@ -2,14 +2,14 @@ use std::sync::Arc;
 
 use application::{SceneRuntime, SceneSnapshot};
 use effects::BuiltinEffect;
-use rumqttc::{AsyncClient, QoS};
 use store::Store;
 
 use crate::topics::Topics;
+use crate::transport::MqttClient;
 use crate::types::{DeviceStatePayload, EffectPayload, LayerPayload, ScenePayload, ZonePayload};
 
 pub async fn publish_device_state(
-    client: &AsyncClient,
+    client: &MqttClient,
     topics: &Topics,
     snapshot: &SceneSnapshot,
     effect: Option<&str>,
@@ -18,7 +18,7 @@ pub async fn publish_device_state(
     publish_retained(client, &topics.device_state(), &payload).await;
 }
 
-pub async fn publish_zones(client: &AsyncClient, topics: &Topics, store: &Store) {
+pub async fn publish_zones(client: &MqttClient, topics: &Topics, store: &Store) {
     let Ok(zones) = store.get_zones().await else {
         return;
     };
@@ -36,7 +36,7 @@ pub async fn publish_zones(client: &AsyncClient, topics: &Topics, store: &Store)
     }
 }
 
-pub async fn publish_scenes(client: &AsyncClient, topics: &Topics, store: &Store) {
+pub async fn publish_scenes(client: &MqttClient, topics: &Topics, store: &Store) {
     let Ok(scenes) = store.get_scenes().await else {
         return;
     };
@@ -44,7 +44,7 @@ pub async fn publish_scenes(client: &AsyncClient, topics: &Topics, store: &Store
     publish_retained(client, &topics.scenes(), &payloads).await;
 }
 
-pub async fn publish_active_layers(client: &AsyncClient, topics: &Topics, store: &Store) {
+pub async fn publish_active_layers(client: &MqttClient, topics: &Topics, store: &Store) {
     let Ok(layers) = store.get_active_layers().await else {
         return;
     };
@@ -53,7 +53,7 @@ pub async fn publish_active_layers(client: &AsyncClient, topics: &Topics, store:
 }
 
 pub async fn publish_effects(
-    client: &AsyncClient,
+    client: &MqttClient,
     topics: &Topics,
     store: &Store,
     builtins: &[BuiltinEffect],
@@ -66,7 +66,7 @@ pub async fn publish_effects(
 }
 
 pub async fn publish_all_initial(
-    client: &AsyncClient,
+    client: &MqttClient,
     topics: &Topics,
     runtime: &Arc<dyn SceneRuntime>,
     store: &Store,
@@ -86,21 +86,18 @@ pub fn active_scene_state_payload(name: &str) -> Vec<u8> {
     name.as_bytes().to_vec()
 }
 
-pub async fn publish_active_scene_state(client: &AsyncClient, topics: &Topics, name: &str) {
+pub async fn publish_active_scene_state(client: &MqttClient, topics: &Topics, name: &str) {
     let topic = topics.active_scene_state();
     let payload = active_scene_state_payload(name);
-    if let Err(e) = client
-        .publish(&topic, QoS::AtLeastOnce, true, payload)
-        .await
-    {
+    if let Err(e) = client.publish(&topic, true, payload).await {
         eprintln!("[mqtt] publish error on {topic}: {e}");
     }
 }
 
-pub async fn publish_retained<T: serde::Serialize>(client: &AsyncClient, topic: &str, value: &T) {
+pub async fn publish_retained<T: serde::Serialize>(client: &MqttClient, topic: &str, value: &T) {
     match serde_json::to_vec(value) {
         Ok(payload) => {
-            if let Err(e) = client.publish(topic, QoS::AtLeastOnce, true, payload).await {
+            if let Err(e) = client.publish(topic, true, payload).await {
                 eprintln!("[mqtt] publish error on {topic}: {e}");
             }
         }

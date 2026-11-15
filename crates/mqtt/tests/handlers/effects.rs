@@ -1,8 +1,10 @@
 use crate::common::{self, payload};
+use macro_rules_attribute::apply;
 use mqtt::handlers::route;
 use serde_json::json;
+use smol_macros::test;
 
-#[tokio::test]
+#[apply(test!)]
 async fn effect_create() {
     let runtime = common::MockRuntime::new();
     let store = common::in_memory_store().await;
@@ -20,7 +22,7 @@ async fn effect_create() {
     assert_eq!(effects[0].name, "Blink");
 }
 
-#[tokio::test]
+#[apply(test!)]
 async fn effect_update() {
     let runtime = common::MockRuntime::new();
     let store = common::in_memory_store().await;
@@ -43,7 +45,7 @@ async fn effect_update() {
     assert_eq!(updated.name, "New");
 }
 
-#[tokio::test]
+#[apply(test!)]
 async fn effect_delete() {
     let runtime = common::MockRuntime::new();
     let store = common::in_memory_store().await;

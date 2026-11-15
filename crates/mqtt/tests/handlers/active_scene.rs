@@ -1,8 +1,10 @@
 use crate::common;
+use macro_rules_attribute::apply;
+use smol_macros::test;
 
 use mqtt::handlers::route;
 
-#[tokio::test]
+#[apply(test!)]
 async fn active_scene_set_by_name() {
     let runtime = common::MockRuntime::new();
     let store = common::in_memory_store().await;
@@ -30,7 +32,7 @@ async fn active_scene_set_by_name() {
     assert_eq!(*runtime.reload_count.lock().unwrap(), 1);
 }
 
-#[tokio::test]
+#[apply(test!)]
 async fn active_scene_set_empty_clears() {
     let runtime = common::MockRuntime::new();
     let store = common::in_memory_store().await;

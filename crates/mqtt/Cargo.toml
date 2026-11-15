@@ -10,8 +10,9 @@ effects     = { workspace = true }
 store       = { workspace = true }
 serde       = { workspace = true }
 serde_json  = { workspace = true }
-tokio       = { workspace = true, features = ["time"] }
-rumqttc     = "0.24"
+smol        = { workspace = true }
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["rt", "macros"] }
+smol-macros           = { workspace = true }
+macro_rules_attribute = { workspace = true }
+smol  = { workspace = true }

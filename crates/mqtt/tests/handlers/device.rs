@@ -1,9 +1,11 @@
 use crate::common::{self, payload};
 use domain::Rgb;
+use macro_rules_attribute::apply;
 use mqtt::handlers::route;
 use serde_json::json;
+use smol_macros::test;
 
-#[tokio::test]
+#[apply(test!)]
 async fn device_set_on_off() {
     let runtime = common::MockRuntime::new();
     let store = common::in_memory_store().await;
@@ -21,7 +23,7 @@ async fn device_set_on_off() {
     assert!(*runtime.on.lock().unwrap());
 }
 
-#[tokio::test]
+#[apply(test!)]
 async fn device_set_brightness() {
     let runtime = common::MockRuntime::new();
     let store = common::in_memory_store().await;
@@ -36,7 +38,7 @@ async fn device_set_brightness() {
     assert_eq!(*runtime.brightness.lock().unwrap(), 128);
 }
 
-#[tokio::test]
+#[apply(test!)]
 async fn device_set_color() {
     let runtime = common::MockRuntime::new();
     let store = common::in_memory_store().await;
@@ -59,7 +61,7 @@ async fn device_set_color() {
     );
 }
 
-#[tokio::test]
+#[apply(test!)]
 async fn device_set_ignores_invalid_json() {
     let runtime = common::MockRuntime::new();
     let store = common::in_memory_store().await;

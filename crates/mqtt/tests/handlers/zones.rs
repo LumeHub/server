@@ -1,8 +1,10 @@
 use crate::common::{self, payload};
+use macro_rules_attribute::apply;
 use mqtt::handlers::route;
 use serde_json::json;
+use smol_macros::test;
 
-#[tokio::test]
+#[apply(test!)]
 async fn zone_create() {
     let runtime = common::MockRuntime::new();
     let store = common::in_memory_store().await;
@@ -23,7 +25,7 @@ async fn zone_create() {
     assert_eq!(zones[0].transition_length, 0);
 }
 
-#[tokio::test]
+#[apply(test!)]
 async fn zone_create_with_transition() {
     let runtime = common::MockRuntime::new();
     let store = common::in_memory_store().await;
@@ -40,7 +42,7 @@ async fn zone_create_with_transition() {
     assert_eq!(zones[0].transition_length, 8);
 }
 
-#[tokio::test]
+#[apply(test!)]
 async fn zone_update() {
     let runtime = common::MockRuntime::new();
     let store = common::in_memory_store().await;
@@ -62,7 +64,7 @@ async fn zone_update() {
     assert_eq!(updated.end_pixel, 20);
 }
 
-#[tokio::test]
+#[apply(test!)]
 async fn zone_delete() {
     let runtime = common::MockRuntime::new();
     let store = common::in_memory_store().await;
@@ -77,7 +79,7 @@ async fn zone_delete() {
     assert!(zones.iter().all(|z| z.id != id));
 }
 
-#[tokio::test]
+#[apply(test!)]
 async fn zone_create_ignores_invalid_json() {
     let runtime = common::MockRuntime::new();
     let store = common::in_memory_store().await;

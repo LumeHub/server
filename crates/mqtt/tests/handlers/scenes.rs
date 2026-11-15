@@ -1,8 +1,10 @@
 use crate::common::{self, payload};
+use macro_rules_attribute::apply;
 use mqtt::handlers::route;
 use serde_json::json;
+use smol_macros::test;
 
-#[tokio::test]
+#[apply(test!)]
 async fn scene_create() {
     let runtime = common::MockRuntime::new();
     let store = common::in_memory_store().await;
@@ -20,7 +22,7 @@ async fn scene_create() {
     assert_eq!(scenes[0].name, "Sunset");
 }
 
-#[tokio::test]
+#[apply(test!)]
 async fn scene_update() {
     let runtime = common::MockRuntime::new();
     let store = common::in_memory_store().await;
@@ -40,7 +42,7 @@ async fn scene_update() {
     assert_eq!(updated.name, "New");
 }
 
-#[tokio::test]
+#[apply(test!)]
 async fn scene_delete() {
     let runtime = common::MockRuntime::new();
     let store = common::in_memory_store().await;
@@ -55,7 +57,7 @@ async fn scene_delete() {
     assert!(scenes.iter().all(|s| s.id != id));
 }
 
-#[tokio::test]
+#[apply(test!)]
 async fn scene_load_into_active() {
     let runtime = common::MockRuntime::new();
     let store = common::in_memory_store().await;

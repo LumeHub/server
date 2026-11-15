@@ -5,7 +5,7 @@ use domain::Rgb;
 use mqtt::MqttConfig;
 use mqtt::ctx::Ctx;
 use mqtt::topics::Topics;
-use rumqttc::{AsyncClient, MqttOptions};
+use mqtt::transport::MqttClient;
 use store::Store;
 
 pub struct MockRuntime {
@@ -60,12 +60,10 @@ pub async fn in_memory_store() -> Arc<Store> {
     Arc::new(Store::open_in_memory().await.unwrap())
 }
 
-/// Create an AsyncClient whose eventloop is immediately dropped.
+/// A client whose connection is already gone.
 /// Publish/subscribe calls fail silently — tests verify store/runtime state instead.
-pub fn disconnected_client() -> AsyncClient {
-    let (client, _eventloop) =
-        AsyncClient::new(MqttOptions::new("lumehub-test", "localhost", 1883), 32);
-    client
+pub fn disconnected_client() -> MqttClient {
+    MqttClient::disconnected()
 }
 
 pub fn payload(v: serde_json::Value) -> Vec<u8> {

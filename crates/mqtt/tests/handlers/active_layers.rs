@@ -1,8 +1,10 @@
 use crate::common::{self, payload};
+use macro_rules_attribute::apply;
 use mqtt::handlers::route;
 use serde_json::json;
+use smol_macros::test;
 
-#[tokio::test]
+#[apply(test!)]
 async fn active_layers_clear() {
     let runtime = common::MockRuntime::new();
     let store = common::in_memory_store().await;
@@ -28,7 +30,7 @@ async fn active_layers_clear() {
     assert_eq!(*runtime.halt_count.lock().unwrap(), 1);
 }
 
-#[tokio::test]
+#[apply(test!)]
 async fn active_layers_add() {
     let runtime = common::MockRuntime::new();
     let store = common::in_memory_store().await;
@@ -50,7 +52,7 @@ async fn active_layers_add() {
     assert_eq!(*runtime.reload_count.lock().unwrap(), 1);
 }
 
-#[tokio::test]
+#[apply(test!)]
 async fn active_layers_set_replaces_all() {
     let runtime = common::MockRuntime::new();
     let store = common::in_memory_store().await;
@@ -88,7 +90,7 @@ async fn active_layers_set_replaces_all() {
     assert_eq!(layers[0].effect_id, e2.id);
 }
 
-#[tokio::test]
+#[apply(test!)]
 async fn active_layer_update() {
     let runtime = common::MockRuntime::new();
     let store = common::in_memory_store().await;
@@ -119,7 +121,7 @@ async fn active_layer_update() {
     assert_eq!(*runtime.reload_count.lock().unwrap(), 1);
 }
 
-#[tokio::test]
+#[apply(test!)]
 async fn active_layer_delete() {
     let runtime = common::MockRuntime::new();
     let store = common::in_memory_store().await;
@@ -148,7 +150,7 @@ async fn active_layer_delete() {
     assert_eq!(*runtime.reload_count.lock().unwrap(), 1);
 }
 
-#[tokio::test]
+#[apply(test!)]
 async fn active_layers_reorder() {
     let runtime = common::MockRuntime::new();
     let store = common::in_memory_store().await;
