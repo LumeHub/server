@@ -12,6 +12,7 @@ members = [
     "crates/persistence",
     "crates/store",
     "crates/mqtt",
+    "crates/httpd",
     "crates/server",
 ]
 resolver = "2"
@@ -30,6 +31,7 @@ discovery   = { path = "crates/discovery" }
 persistence = { path = "crates/persistence" }
 store       = { path = "crates/store" }
 mqtt        = { path = "crates/mqtt" }
+httpd       = { path = "crates/httpd" }
 
 # External crates
 actix-web    = "4.11.0"
@@ -48,6 +50,8 @@ tokio        = { version = "1", features = ["sync", "fs"] }
 futures-util = "0.3"
 rusqlite     = { version = "0.43", features = ["bundled"] }
 smol         = "2"
+httparse     = "1"
+serde_urlencoded = "0.7"
 async-broadcast = "0.7"
 async-channel = "2"
 futures-lite = "2"
