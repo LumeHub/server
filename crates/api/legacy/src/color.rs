@@ -1,6 +1,8 @@
-use actix_web::{HttpResponse, Responder, post, web};
+use std::sync::Arc;
+
 use application::SceneRuntime;
 use domain::Rgb;
+use httpd::{Request, Response};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
@@ -27,19 +29,14 @@ impl From<Rgb> for LedColorResponse {
     }
 }
 
-#[post("/led/getColor")]
-pub async fn led_get_color(runtime: web::Data<dyn SceneRuntime>) -> impl Responder {
-    HttpResponse::Ok().json(LedColorResponse::from(runtime.snapshot().color))
+pub async fn led_get_color(runtime: Arc<dyn SceneRuntime>, _req: Request) -> Response {
+    Response::json(200, &LedColorResponse::from(runtime.snapshot().color))
 }
 
-#[post("/led/setColor")]
-pub async fn led_set_color(
-    runtime: web::Data<dyn SceneRuntime>,
-    body: web::Bytes,
-) -> impl Responder {
-    let req: SetColorRequest = match serde_json::from_slice(&body) {
+pub async fn led_set_color(runtime: Arc<dyn SceneRuntime>, http: Request) -> Response {
+    let req: SetColorRequest = match serde_json::from_slice(http.body()) {
         Ok(r) => r,
-        Err(e) => return HttpResponse::BadRequest().body(e.to_string()),
+        Err(e) => return Response::text(400, e.to_string()),
     };
     let color = Rgb {
         r: req.red,
@@ -47,5 +44,5 @@ pub async fn led_set_color(
         b: req.blue,
     };
     runtime.set_color(color);
-    HttpResponse::Ok().json(LedColorResponse::from(runtime.snapshot().color))
+    Response::json(200, &LedColorResponse::from(runtime.snapshot().color))
 }

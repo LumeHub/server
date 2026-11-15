@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
-use application::{SceneRuntime, SceneSnapshot};
+use api::ApiState;
+use application::{SceneRuntime, SceneSnapshot, StateEventBus};
 use domain::Rgb;
+use httpd::Router;
 use store::Store;
 
 pub struct MockRuntime;
@@ -30,4 +32,25 @@ pub async fn make_store() -> Arc<Store> {
 
 pub fn mock_runtime() -> Arc<dyn SceneRuntime> {
     Arc::new(MockRuntime)
+}
+
+/// Strip length the handlers see in tests.
+pub const TEST_STRIP_LEN: usize = 100;
+
+pub fn state(store: Arc<Store>, runtime: Arc<dyn SceneRuntime>) -> ApiState {
+    ApiState {
+        store,
+        runtime,
+        builtins: Arc::new(effects::load_builtins()),
+        strip_len: TEST_STRIP_LEN,
+        events: StateEventBus::new(),
+    }
+}
+
+pub fn router(st: &ApiState, register: &[fn(&mut Router, &ApiState)]) -> Router {
+    let mut r = Router::new();
+    for f in register {
+        f(&mut r, st);
+    }
+    r
 }

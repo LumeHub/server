@@ -1,10 +1,8 @@
-use std::sync::Arc;
-
-use actix_web::{HttpResponse, Responder, delete, get, post, put, web};
+use httpd::{Request, Response, Router};
 use serde::{Deserialize, Serialize};
-use store::Store;
 
-use crate::error::ApiError;
+use crate::ApiState;
+use crate::error::ApiResult;
 use crate::types::{LayerResponse, SceneResponse};
 
 #[derive(Serialize)]
@@ -14,11 +12,11 @@ struct SceneDetailResponse {
     layers: Vec<LayerResponse>,
 }
 
-#[get("/scenes")]
-pub async fn list_scenes(store: web::Data<Arc<Store>>) -> Result<impl Responder, ApiError> {
-    let scenes = store.get_scenes().await?;
-    Ok(HttpResponse::Ok().json(
-        scenes
+pub async fn list_scenes(st: ApiState, _req: Request) -> ApiResult {
+    let scenes = st.store.get_scenes().await?;
+    Ok(Response::json(
+        200,
+        &scenes
             .into_iter()
             .map(SceneResponse::from)
             .collect::<Vec<_>>(),
@@ -30,53 +28,43 @@ struct SceneBody {
     name: String,
 }
 
-#[post("/scenes")]
-pub async fn create_scene(
-    store: web::Data<Arc<Store>>,
-    body: web::Json<SceneBody>,
-) -> Result<impl Responder, ApiError> {
-    let scene = store.create_scene(&body.name).await?;
-    Ok(HttpResponse::Created().json(SceneResponse::from(scene)))
+pub async fn create_scene(st: ApiState, req: Request) -> ApiResult {
+    let body: SceneBody = req.json()?;
+    let scene = st.store.create_scene(&body.name).await?;
+    Ok(Response::json(201, &SceneResponse::from(scene)))
 }
 
-#[get("/scenes/{id}")]
-pub async fn get_scene(
-    store: web::Data<Arc<Store>>,
-    path: web::Path<String>,
-) -> Result<impl Responder, ApiError> {
-    let id = path.into_inner();
-    let scene = store.get_scene(&id).await?;
-    let layers = store.get_layers(&id).await?;
-    Ok(HttpResponse::Ok().json(SceneDetailResponse {
-        id: scene.id,
-        name: scene.name,
-        layers: layers.into_iter().map(LayerResponse::from).collect(),
-    }))
+pub async fn get_scene(st: ApiState, req: Request) -> ApiResult {
+    let id = req.param("id").to_string();
+    let scene = st.store.get_scene(&id).await?;
+    let layers = st.store.get_layers(&id).await?;
+    Ok(Response::json(
+        200,
+        &SceneDetailResponse {
+            id: scene.id,
+            name: scene.name,
+            layers: layers.into_iter().map(LayerResponse::from).collect(),
+        },
+    ))
 }
 
-#[put("/scenes/{id}")]
-pub async fn update_scene(
-    store: web::Data<Arc<Store>>,
-    path: web::Path<String>,
-    body: web::Json<SceneBody>,
-) -> Result<impl Responder, ApiError> {
-    let scene = store.update_scene(&path.into_inner(), &body.name).await?;
-    Ok(HttpResponse::Ok().json(SceneResponse::from(scene)))
+pub async fn update_scene(st: ApiState, req: Request) -> ApiResult {
+    let id = req.param("id").to_string();
+    let body: SceneBody = req.json()?;
+    let scene = st.store.update_scene(&id, &body.name).await?;
+    Ok(Response::json(200, &SceneResponse::from(scene)))
 }
 
-#[delete("/scenes/{id}")]
-pub async fn delete_scene(
-    store: web::Data<Arc<Store>>,
-    path: web::Path<String>,
-) -> Result<impl Responder, ApiError> {
-    store.delete_scene(&path.into_inner()).await?;
-    Ok(HttpResponse::NoContent().finish())
+pub async fn delete_scene(st: ApiState, req: Request) -> ApiResult {
+    let id = req.param("id").to_string();
+    st.store.delete_scene(&id).await?;
+    Ok(Response::empty(204))
 }
 
-pub fn config(cfg: &mut web::ServiceConfig) {
-    cfg.service(list_scenes)
-        .service(create_scene)
-        .service(get_scene)
-        .service(update_scene)
-        .service(delete_scene);
+pub fn routes(r: &mut Router, st: &ApiState) {
+    r.get("/scenes", st.clone(), list_scenes);
+    r.post("/scenes", st.clone(), create_scene);
+    r.get("/scenes/{id}", st.clone(), get_scene);
+    r.put("/scenes/{id}", st.clone(), update_scene);
+    r.delete("/scenes/{id}", st.clone(), delete_scene);
 }

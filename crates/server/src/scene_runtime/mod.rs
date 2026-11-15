@@ -13,6 +13,7 @@ use api_google::effects::{ColorLoop, Sleep, Wake};
 use application::{SceneRuntime, SceneSnapshot, StateEventBus};
 use domain::Rgb;
 use effects::{BuiltinEffect, LiveParam};
+use lumehub_server::state_saver::StateSaver;
 use persistence::PersistedState;
 use store::Store;
 
@@ -23,7 +24,7 @@ pub struct RenderTaskRuntime {
     pub(crate) queue: EffectQueue,
     pub(crate) state: Arc<Mutex<SceneState>>,
     pub(crate) bus: StateEventBus,
-    pub(crate) state_tx: Option<tokio::sync::watch::Sender<PersistedState>>,
+    pub(crate) saver: Option<StateSaver>,
     pub(crate) store: Arc<Store>,
     pub(crate) builtins: Arc<HashMap<String, BuiltinEffect>>,
     pub(crate) primary_color: Arc<LiveParam<Rgb>>,
@@ -35,7 +36,7 @@ impl RenderTaskRuntime {
         queue: EffectQueue,
         bus: StateEventBus,
         initial: PersistedState,
-        state_tx: Option<tokio::sync::watch::Sender<PersistedState>>,
+        saver: Option<StateSaver>,
         store: Arc<Store>,
         builtins: Vec<BuiltinEffect>,
         strip_len: usize,
@@ -50,7 +51,7 @@ impl RenderTaskRuntime {
                 scene: ActiveScene::Idle,
             })),
             bus,
-            state_tx,
+            saver,
             store,
             builtins: Arc::new(builtins.into_iter().map(|b| (b.id(), b)).collect()),
             primary_color: Arc::new(LiveParam::new(initial.color, color_speed)),
@@ -60,8 +61,8 @@ impl RenderTaskRuntime {
 
     fn emit(&self, snapshot: SceneSnapshot, persisted: PersistedState) {
         self.bus.notify(snapshot);
-        if let Some(tx) = &self.state_tx {
-            let _ = tx.send(persisted);
+        if let Some(saver) = &self.saver {
+            saver.save(persisted);
         }
     }
 

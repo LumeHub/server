@@ -3,17 +3,33 @@ mod settings;
 
 use std::sync::Arc;
 
-use actix_web::{App, HttpServer, web};
 use application::{SceneRuntime, StateEventBus};
 use effects::load_builtins;
 use engine::EffectQueue;
+use lumehub_server::state_saver::StateSaver;
 use settings::Settings;
+use smol::net::TcpListener;
 use store::Store;
 
 use scene_runtime::RenderTaskRuntime;
 
-#[actix_web::main]
-async fn main() -> std::io::Result<()> {
+fn main() -> std::io::Result<()> {
+    configure_executor_threads();
+    smol::block_on(run())
+}
+
+/// smol's global executor runs a single worker thread unless told otherwise.
+/// Use one per core, like the tokio runtime this replaced, so a slow scene
+/// reload can't stall HTTP or MQTT. `SMOL_THREADS` still overrides.
+fn configure_executor_threads() {
+    if std::env::var_os("SMOL_THREADS").is_none() {
+        let threads = std::thread::available_parallelism().map_or(2, |n| n.get());
+        // SAFETY: called first thing in main, before any other thread exists.
+        unsafe { std::env::set_var("SMOL_THREADS", threads.to_string()) };
+    }
+}
+
+async fn run() -> std::io::Result<()> {
     let app_settings = Settings::new().unwrap_or_else(|e| {
         eprintln!("error: failed to load configuration: {}", e);
         std::process::exit(1);
@@ -50,31 +66,15 @@ async fn main() -> std::io::Result<()> {
     for e in effects::validate_builtin_scripts() {
         eprintln!("warning: {}", e);
     }
-    let builtins_data = web::Data::new(builtins.clone());
-
-    let (state_tx, mut state_rx) = tokio::sync::watch::channel(initial_state.clone());
-    tokio::spawn(async move {
-        loop {
-            if state_rx.changed().await.is_err() {
-                break;
-            }
-            let state = state_rx.borrow_and_update().clone();
-            if let Ok(json) = serde_json::to_string(&state)
-                && let Err(e) = tokio::fs::write(&state_file, json).await
-            {
-                eprintln!("warning: failed to save state: {}", e);
-            }
-        }
-    });
 
     let event_bus = StateEventBus::new();
     let runtime: Arc<dyn SceneRuntime> = Arc::new(RenderTaskRuntime::new(
         effect_queue.clone(),
         event_bus.clone(),
         initial_state,
-        Some(state_tx),
+        Some(StateSaver::spawn(state_file)),
         Arc::clone(&store),
-        builtins,
+        builtins.clone(),
         strip_len,
     ));
 
@@ -92,15 +92,34 @@ async fn main() -> std::io::Result<()> {
         );
     }
 
-    #[cfg(feature = "google")]
-    let command_dispatcher = api_google::commands::CommandDispatcher::new();
-
     let crossfade_frames = app_settings.led_controller.crossfade_ms as usize / 16;
     engine::spawn(Box::new(led), rx_effect_processor, crossfade_frames);
 
     let ip_address = app_settings.server.ip_address;
     let port = app_settings.server.port;
 
+    let mut router = httpd::Router::new();
+    api::routes(
+        &mut router,
+        &api::ApiState {
+            store: Arc::clone(&store),
+            runtime: Arc::clone(&runtime),
+            builtins: Arc::new(builtins),
+            strip_len,
+            events: event_bus.clone(),
+        },
+    );
+    api_legacy::routes(&mut router, &runtime);
+    #[cfg(feature = "google")]
+    api_google::routes(
+        &mut router,
+        &api_google::GoogleState {
+            runtime: Arc::clone(&runtime),
+            dispatcher: api_google::commands::CommandDispatcher::new(),
+        },
+    );
+
+    let listener = TcpListener::bind((ip_address.as_str(), port)).await?;
     println!("Server running at http://{}:{}", ip_address, port);
 
     let _mdns = app_settings.mdns.enable.then(|| {
@@ -113,32 +132,5 @@ async fn main() -> std::io::Result<()> {
             .ok()
     });
 
-    HttpServer::new(move || {
-        let app = App::new()
-            .app_data(web::Data::new(effect_queue.clone()))
-            .app_data(web::Data::new(store.clone()))
-            .app_data(web::Data::new(strip_len))
-            .app_data(builtins_data.clone())
-            .app_data(web::Data::from(Arc::clone(&runtime)))
-            .app_data(web::Data::new(event_bus.clone()))
-            .configure(api::device::config)
-            .configure(api::effects::config)
-            .configure(api::events::config)
-            .configure(api::zones::config)
-            // active_scene must precede scenes: /scenes/active must match before /scenes/{id}
-            .configure(api::active_scene::config)
-            .configure(api::scenes::config)
-            .configure(api_legacy::config);
-
-        #[cfg(feature = "google")]
-        let app = app
-            .app_data(web::Data::new(command_dispatcher.clone()))
-            .configure(api_google::config)
-            .configure(api_google::oauth::config);
-
-        app
-    })
-    .bind((ip_address.as_str(), port))?
-    .run()
-    .await
+    httpd::serve(listener, Arc::new(router)).await
 }

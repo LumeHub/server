@@ -1,10 +1,9 @@
-use std::sync::Arc;
-
-use actix_web::{HttpResponse, Responder, delete, get, post, put, web};
+use httpd::{Request, Response, Router};
 use serde::{Deserialize, Serialize};
-use store::{Store, ZoneRecord};
+use store::ZoneRecord;
 
-use crate::error::ApiError;
+use crate::ApiState;
+use crate::error::{ApiError, ApiResult};
 
 const ALL_ZONE_ID: &str = "all";
 
@@ -39,14 +38,16 @@ fn all_zone(strip_len: usize) -> ZoneResponse {
     }
 }
 
-#[get("/zones")]
-pub async fn list_zones(
-    store: web::Data<Arc<Store>>,
-    strip_len: web::Data<usize>,
-) -> Result<impl Responder, ApiError> {
-    let mut zones = vec![all_zone(**strip_len)];
-    zones.extend(store.get_zones().await?.into_iter().map(ZoneResponse::from));
-    Ok(HttpResponse::Ok().json(zones))
+pub async fn list_zones(st: ApiState, _req: Request) -> ApiResult {
+    let mut zones = vec![all_zone(st.strip_len)];
+    zones.extend(
+        st.store
+            .get_zones()
+            .await?
+            .into_iter()
+            .map(ZoneResponse::from),
+    );
+    Ok(Response::json(200, &zones))
 }
 
 #[derive(Deserialize)]
@@ -58,12 +59,10 @@ struct ZoneBody {
     transition_length: u32,
 }
 
-#[post("/zones")]
-pub async fn create_zone(
-    store: web::Data<Arc<Store>>,
-    body: web::Json<ZoneBody>,
-) -> Result<impl Responder, ApiError> {
-    let zone = store
+pub async fn create_zone(st: ApiState, req: Request) -> ApiResult {
+    let body: ZoneBody = req.json()?;
+    let zone = st
+        .store
         .create_zone(
             &body.name,
             body.start_pixel,
@@ -71,34 +70,26 @@ pub async fn create_zone(
             body.transition_length,
         )
         .await?;
-    Ok(HttpResponse::Created().json(ZoneResponse::from(zone)))
+    Ok(Response::json(201, &ZoneResponse::from(zone)))
 }
 
-#[get("/zones/{id}")]
-pub async fn get_zone(
-    store: web::Data<Arc<Store>>,
-    strip_len: web::Data<usize>,
-    path: web::Path<String>,
-) -> Result<impl Responder, ApiError> {
-    let id = path.into_inner();
+pub async fn get_zone(st: ApiState, req: Request) -> ApiResult {
+    let id = req.param("id").to_string();
     if id == ALL_ZONE_ID {
-        return Ok(HttpResponse::Ok().json(all_zone(**strip_len)));
+        return Ok(Response::json(200, &all_zone(st.strip_len)));
     }
-    let zone = store.get_zone(&id).await?;
-    Ok(HttpResponse::Ok().json(ZoneResponse::from(zone)))
+    let zone = st.store.get_zone(&id).await?;
+    Ok(Response::json(200, &ZoneResponse::from(zone)))
 }
 
-#[put("/zones/{id}")]
-pub async fn update_zone(
-    store: web::Data<Arc<Store>>,
-    path: web::Path<String>,
-    body: web::Json<ZoneBody>,
-) -> Result<impl Responder, ApiError> {
-    let id = path.into_inner();
+pub async fn update_zone(st: ApiState, req: Request) -> ApiResult {
+    let id = req.param("id").to_string();
+    let body: ZoneBody = req.json()?;
     if id == ALL_ZONE_ID {
         return Err(ApiError::Forbidden("cannot modify the full-strip zone"));
     }
-    let zone = store
+    let zone = st
+        .store
         .update_zone(
             &id,
             &body.name,
@@ -107,26 +98,22 @@ pub async fn update_zone(
             body.transition_length,
         )
         .await?;
-    Ok(HttpResponse::Ok().json(ZoneResponse::from(zone)))
+    Ok(Response::json(200, &ZoneResponse::from(zone)))
 }
 
-#[delete("/zones/{id}")]
-pub async fn delete_zone(
-    store: web::Data<Arc<Store>>,
-    path: web::Path<String>,
-) -> Result<impl Responder, ApiError> {
-    let id = path.into_inner();
+pub async fn delete_zone(st: ApiState, req: Request) -> ApiResult {
+    let id = req.param("id").to_string();
     if id == ALL_ZONE_ID {
         return Err(ApiError::Forbidden("cannot delete the full-strip zone"));
     }
-    store.delete_zone(&id).await?;
-    Ok(HttpResponse::NoContent().finish())
+    st.store.delete_zone(&id).await?;
+    Ok(Response::empty(204))
 }
 
-pub fn config(cfg: &mut web::ServiceConfig) {
-    cfg.service(list_zones)
-        .service(create_zone)
-        .service(get_zone)
-        .service(update_zone)
-        .service(delete_zone);
+pub fn routes(r: &mut Router, st: &ApiState) {
+    r.get("/zones", st.clone(), list_zones);
+    r.post("/zones", st.clone(), create_zone);
+    r.get("/zones/{id}", st.clone(), get_zone);
+    r.put("/zones/{id}", st.clone(), update_zone);
+    r.delete("/zones/{id}", st.clone(), delete_zone);
 }

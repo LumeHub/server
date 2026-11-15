@@ -7,8 +7,10 @@ pub mod oauth;
 pub mod request;
 pub mod response;
 
-use actix_web::web;
+pub use endpoint::GoogleState;
 
-pub fn config(cfg: &mut web::ServiceConfig) {
-    cfg.service(endpoint::smarthome);
+/// Smart Home fulfillment plus the (stub) OAuth account-linking endpoints.
+pub fn routes(r: &mut httpd::Router, st: &GoogleState) {
+    endpoint::routes(r, st);
+    oauth::routes(r);
 }

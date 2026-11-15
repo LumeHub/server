@@ -6,6 +6,11 @@ edition = "2024"
 [dependencies]
 domain      = { workspace = true }
 application = { workspace = true }
-actix-web   = { workspace = true }
+httpd       = { workspace = true }
 serde       = { workspace = true }
 serde_json  = { workspace = true }
+
+[dev-dependencies]
+smol       = { workspace = true }
+serde_json = { workspace = true }
+domain     = { workspace = true }

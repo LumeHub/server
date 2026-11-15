@@ -1,4 +1,4 @@
-use actix_web::{HttpResponse, Responder, get, web};
+use httpd::{BadRequest, Request, Response};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -7,13 +7,11 @@ pub struct AuthorizeQuery {
     state: String,
 }
 
-#[get("/oauth/authorize")]
-pub async fn authorize(query: web::Query<AuthorizeQuery>) -> impl Responder {
+pub async fn authorize(_: (), req: Request) -> Result<Response, BadRequest> {
+    let query: AuthorizeQuery = req.query()?;
     let redirect_uri = format!(
         "{}?code=fake-auth-code&state={}",
         query.redirect_uri, query.state
     );
-    HttpResponse::Found()
-        .append_header(("Location", redirect_uri))
-        .finish()
+    Ok(Response::redirect(&redirect_uri))
 }

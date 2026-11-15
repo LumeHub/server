@@ -7,8 +7,13 @@ edition = "2024"
 domain      = { workspace = true }
 application = { workspace = true }
 engine      = { workspace = true }
-actix-web   = { workspace = true }
+httpd       = { workspace = true }
 hsv         = { workspace = true }
 serde       = { workspace = true }
 serde_json  = { workspace = true }
 thiserror   = { workspace = true }
+
+[dev-dependencies]
+smol       = { workspace = true }
+serde_json = { workspace = true }
+domain     = { workspace = true }

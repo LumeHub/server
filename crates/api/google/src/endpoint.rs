@@ -1,6 +1,7 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
-use actix_web::{HttpResponse, Responder, post, web};
+use httpd::{Request, Response, Router};
 
 use super::device::{GoogleDevice, LedStrip};
 use super::request::{Intent, RequestInput, SmartHomeRequest};
@@ -12,17 +13,25 @@ use application::SceneRuntime;
 
 use super::commands;
 
-#[post("/smarthome")]
-pub async fn smarthome(
-    req: web::Json<SmartHomeRequest>,
-    runtime: web::Data<dyn SceneRuntime>,
-    command_dispatcher: web::Data<commands::CommandDispatcher>,
-) -> impl Responder {
+/// Dependencies of the Smart Home fulfillment endpoint.
+#[derive(Clone)]
+pub struct GoogleState {
+    pub runtime: Arc<dyn SceneRuntime>,
+    pub dispatcher: commands::CommandDispatcher,
+}
+
+pub async fn smarthome(st: GoogleState, http: Request) -> Response {
+    let req: SmartHomeRequest = match http.json() {
+        Ok(r) => r,
+        Err(e) => return httpd::IntoResponse::into_response(e),
+    };
+    let runtime = &st.runtime;
+    let command_dispatcher = &st.dispatcher;
     let response_payload = match req.inputs.first() {
         Some(input) => match input.intent {
             Intent::Sync => handle_sync(),
-            Intent::Query => handle_query(input, &runtime),
-            Intent::Execute => handle_execute(input, &runtime, &command_dispatcher),
+            Intent::Query => handle_query(input, runtime.as_ref()),
+            Intent::Execute => handle_execute(input, runtime.as_ref(), command_dispatcher),
             Intent::Disconnect => ResponsePayload::Error(super::response::ErrorResponse {
                 error_code: "Unsupported intent: DISCONNECT".to_string(),
             }),
@@ -32,10 +41,13 @@ pub async fn smarthome(
         }),
     };
 
-    HttpResponse::Ok().json(SmartHomeResponse {
-        request_id: req.request_id.clone(),
-        payload: response_payload,
-    })
+    Response::json(
+        200,
+        &SmartHomeResponse {
+            request_id: req.request_id.clone(),
+            payload: response_payload,
+        },
+    )
 }
 
 fn handle_sync() -> ResponsePayload {
@@ -47,7 +59,7 @@ fn handle_sync() -> ResponsePayload {
     ResponsePayload::Sync(sync_response)
 }
 
-fn handle_query(input: &RequestInput, runtime: &web::Data<dyn SceneRuntime>) -> ResponsePayload {
+fn handle_query(input: &RequestInput, runtime: &dyn SceneRuntime) -> ResponsePayload {
     let device = LedStrip;
     let snap = runtime.snapshot();
 
@@ -70,8 +82,8 @@ fn handle_query(input: &RequestInput, runtime: &web::Data<dyn SceneRuntime>) -> 
 
 fn handle_execute(
     input: &RequestInput,
-    runtime: &web::Data<dyn SceneRuntime>,
-    command_dispatcher: &web::Data<commands::CommandDispatcher>,
+    runtime: &dyn SceneRuntime,
+    command_dispatcher: &commands::CommandDispatcher,
 ) -> ResponsePayload {
     let command_responses = input
         .payload
@@ -80,7 +92,7 @@ fn handle_execute(
         .map(|commands| {
             commands
                 .iter()
-                .flat_map(|cmd| command_dispatcher.process_command(cmd, runtime.as_ref()))
+                .flat_map(|cmd| command_dispatcher.process_command(cmd, runtime))
                 .collect()
         })
         .unwrap_or_default();
@@ -88,4 +100,8 @@ fn handle_execute(
     ResponsePayload::Execute(ExecuteResponse {
         commands: command_responses,
     })
+}
+
+pub fn routes(r: &mut Router, st: &GoogleState) {
+    r.post("/smarthome", st.clone(), smarthome);
 }

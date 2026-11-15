@@ -7,9 +7,9 @@ use effects::composite::CompositeEffect;
 use effects::scene_builder::LayerSpec;
 use effects::{BuiltinEffect, LiveParam, build_composite};
 use engine::{EffectQueue, RenderCommand};
+use lumehub_server::state_saver::StateSaver;
 use persistence::PersistedState;
 use store::{LayerRecord, Store, ZoneRecord};
-use tokio::sync::watch;
 
 use super::RenderTaskRuntime;
 use super::state::{ActiveScene, SceneState, build_snapshot, extract_persisted};
@@ -28,7 +28,7 @@ pub(super) struct SceneReload {
     state: Arc<Mutex<SceneState>>,
     queue: EffectQueue,
     bus: StateEventBus,
-    state_tx: Option<watch::Sender<PersistedState>>,
+    saver: Option<StateSaver>,
     primary_color: Arc<LiveParam<Rgb>>,
     strip_len: usize,
     brightness_val: f32,
@@ -46,7 +46,7 @@ impl SceneReload {
             state: Arc::clone(&rt.state),
             queue: rt.queue.clone(),
             bus: rt.bus.clone(),
-            state_tx: rt.state_tx.clone(),
+            saver: rt.saver.clone(),
             primary_color: Arc::clone(&rt.primary_color),
             strip_len: rt.strip_len,
             brightness_val,
@@ -54,7 +54,7 @@ impl SceneReload {
     }
 
     pub(super) fn spawn(self) {
-        tokio::spawn(async move { self.run().await });
+        smol::spawn(async move { self.run().await }).detach();
     }
 
     async fn run(self) {
@@ -108,8 +108,8 @@ impl SceneReload {
 
     fn emit(&self, snapshot: application::SceneSnapshot, persisted: PersistedState) {
         self.bus.notify(snapshot);
-        if let Some(tx) = &self.state_tx {
-            let _ = tx.send(persisted);
+        if let Some(saver) = &self.saver {
+            saver.save(persisted);
         }
     }
 

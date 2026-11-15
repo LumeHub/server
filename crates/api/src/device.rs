@@ -1,7 +1,10 @@
-use actix_web::{HttpResponse, Responder, get, patch, web};
-use application::{SceneRuntime, SceneSnapshot};
+use application::SceneSnapshot;
 use domain::Rgb;
+use httpd::{Request, Response, Router};
 use serde::{Deserialize, Serialize};
+
+use crate::ApiState;
+use crate::error::ApiResult;
 
 #[derive(Serialize)]
 struct DeviceStateResponse {
@@ -22,9 +25,8 @@ impl From<SceneSnapshot> for DeviceStateResponse {
     }
 }
 
-#[get("/device/state")]
-pub async fn get_state(runtime: web::Data<dyn SceneRuntime>) -> impl Responder {
-    HttpResponse::Ok().json(DeviceStateResponse::from(runtime.snapshot()))
+pub async fn get_state(st: ApiState, _req: Request) -> Response {
+    Response::json(200, &DeviceStateResponse::from(st.runtime.snapshot()))
 }
 
 #[derive(Deserialize)]
@@ -34,23 +36,24 @@ struct PatchStateRequest {
     color: Option<Rgb>,
 }
 
-#[patch("/device/state")]
-pub async fn patch_state(
-    runtime: web::Data<dyn SceneRuntime>,
-    body: web::Json<PatchStateRequest>,
-) -> impl Responder {
+pub async fn patch_state(st: ApiState, req: Request) -> ApiResult {
+    let body: PatchStateRequest = req.json()?;
     if let Some(on) = body.on {
-        runtime.set_on_off(on);
+        st.runtime.set_on_off(on);
     }
     if let Some(brightness) = body.brightness {
-        runtime.set_brightness(brightness);
+        st.runtime.set_brightness(brightness);
     }
     if let Some(color) = body.color {
-        runtime.set_color(color);
+        st.runtime.set_color(color);
     }
-    HttpResponse::Ok().json(DeviceStateResponse::from(runtime.snapshot()))
+    Ok(Response::json(
+        200,
+        &DeviceStateResponse::from(st.runtime.snapshot()),
+    ))
 }
 
-pub fn config(cfg: &mut web::ServiceConfig) {
-    cfg.service(get_state).service(patch_state);
+pub fn routes(r: &mut Router, st: &ApiState) {
+    r.get("/device/state", st.clone(), get_state);
+    r.patch("/device/state", st.clone(), patch_state);
 }

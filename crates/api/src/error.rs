@@ -1,9 +1,9 @@
-use actix_web::HttpResponse;
-use actix_web::ResponseError;
+use httpd::{IntoResponse, Response};
 use store::StoreError;
 
 #[derive(Debug)]
 pub enum ApiError {
+    BadRequest(String),
     NotFound,
     Forbidden(&'static str),
     Internal(String),
@@ -12,6 +12,7 @@ pub enum ApiError {
 impl std::fmt::Display for ApiError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::BadRequest(msg) => write!(f, "{msg}"),
             Self::NotFound => write!(f, "not found"),
             Self::Forbidden(msg) => write!(f, "{msg}"),
             Self::Internal(msg) => write!(f, "{msg}"),
@@ -19,12 +20,13 @@ impl std::fmt::Display for ApiError {
     }
 }
 
-impl ResponseError for ApiError {
-    fn error_response(&self) -> HttpResponse {
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
         match self {
-            Self::NotFound => HttpResponse::NotFound().finish(),
-            Self::Forbidden(msg) => HttpResponse::Forbidden().body(*msg),
-            Self::Internal(msg) => HttpResponse::InternalServerError().body(msg.clone()),
+            Self::BadRequest(msg) => Response::text(400, msg),
+            Self::NotFound => Response::empty(404),
+            Self::Forbidden(msg) => Response::text(403, msg),
+            Self::Internal(msg) => Response::text(500, msg),
         }
     }
 }
@@ -37,3 +39,11 @@ impl From<StoreError> for ApiError {
         }
     }
 }
+
+impl From<httpd::BadRequest> for ApiError {
+    fn from(e: httpd::BadRequest) -> Self {
+        Self::BadRequest(e.0)
+    }
+}
+
+pub type ApiResult = Result<Response, ApiError>;

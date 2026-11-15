@@ -1,12 +1,11 @@
-use std::sync::Arc;
-
-use actix_web::{HttpResponse, Responder, delete, get, post, put, web};
 use domain::ParamDef;
 use effects::BuiltinEffect;
+use httpd::{Request, Response, Router};
 use serde::{Deserialize, Serialize};
-use store::{EffectRecord, Store};
+use store::EffectRecord;
 
-use crate::error::ApiError;
+use crate::ApiState;
+use crate::error::{ApiError, ApiResult};
 
 #[derive(Serialize)]
 struct EffectResponse {
@@ -41,15 +40,11 @@ impl From<&BuiltinEffect> for EffectResponse {
     }
 }
 
-#[get("/effects")]
-pub async fn list_effects(
-    store: web::Data<Arc<Store>>,
-    builtins: web::Data<Vec<BuiltinEffect>>,
-) -> Result<impl Responder, ApiError> {
-    let user_effects = store.get_effects().await?;
-    let mut effects: Vec<EffectResponse> = builtins.iter().map(EffectResponse::from).collect();
+pub async fn list_effects(st: ApiState, _req: Request) -> ApiResult {
+    let user_effects = st.store.get_effects().await?;
+    let mut effects: Vec<EffectResponse> = st.builtins.iter().map(EffectResponse::from).collect();
     effects.extend(user_effects.into_iter().map(EffectResponse::from));
-    Ok(HttpResponse::Ok().json(effects))
+    Ok(Response::json(200, &effects))
 }
 
 #[derive(Deserialize)]
@@ -60,70 +55,54 @@ struct EffectBody {
     params: Vec<ParamDef>,
 }
 
-#[post("/effects")]
-pub async fn create_effect(
-    store: web::Data<Arc<Store>>,
-    body: web::Json<EffectBody>,
-) -> Result<impl Responder, ApiError> {
-    let record = store
+pub async fn create_effect(st: ApiState, req: Request) -> ApiResult {
+    let body: EffectBody = req.json()?;
+    let record = st
+        .store
         .create_effect(&body.name, &body.script, &body.params)
         .await?;
-    Ok(HttpResponse::Created().json(EffectResponse::from(record)))
+    Ok(Response::json(201, &EffectResponse::from(record)))
 }
 
-#[get("/effects/{id}")]
-pub async fn get_effect(
-    store: web::Data<Arc<Store>>,
-    builtins: web::Data<Vec<BuiltinEffect>>,
-    path: web::Path<String>,
-) -> Result<impl Responder, ApiError> {
-    let id = path.into_inner();
-    if let Some(b) = find_builtin(&builtins, &id) {
-        return Ok(HttpResponse::Ok().json(EffectResponse::from(b)));
+pub async fn get_effect(st: ApiState, req: Request) -> ApiResult {
+    let id = req.param("id").to_string();
+    if let Some(b) = find_builtin(&st.builtins, &id) {
+        return Ok(Response::json(200, &EffectResponse::from(b)));
     }
-    let record = store.get_effect(&id).await?;
-    Ok(HttpResponse::Ok().json(EffectResponse::from(record)))
+    let record = st.store.get_effect(&id).await?;
+    Ok(Response::json(200, &EffectResponse::from(record)))
 }
 
-#[put("/effects/{id}")]
-pub async fn update_effect(
-    store: web::Data<Arc<Store>>,
-    builtins: web::Data<Vec<BuiltinEffect>>,
-    path: web::Path<String>,
-    body: web::Json<EffectBody>,
-) -> Result<impl Responder, ApiError> {
-    let id = path.into_inner();
-    if find_builtin(&builtins, &id).is_some() {
+pub async fn update_effect(st: ApiState, req: Request) -> ApiResult {
+    let id = req.param("id").to_string();
+    let body: EffectBody = req.json()?;
+    if find_builtin(&st.builtins, &id).is_some() {
         return Err(ApiError::Forbidden("cannot modify a built-in effect"));
     }
-    let record = store
+    let record = st
+        .store
         .update_effect(&id, &body.name, &body.script, &body.params)
         .await?;
-    Ok(HttpResponse::Ok().json(EffectResponse::from(record)))
+    Ok(Response::json(200, &EffectResponse::from(record)))
 }
 
-#[delete("/effects/{id}")]
-pub async fn delete_effect(
-    store: web::Data<Arc<Store>>,
-    builtins: web::Data<Vec<BuiltinEffect>>,
-    path: web::Path<String>,
-) -> Result<impl Responder, ApiError> {
-    let id = path.into_inner();
-    if find_builtin(&builtins, &id).is_some() {
+pub async fn delete_effect(st: ApiState, req: Request) -> ApiResult {
+    let id = req.param("id").to_string();
+    if find_builtin(&st.builtins, &id).is_some() {
         return Err(ApiError::Forbidden("cannot delete a built-in effect"));
     }
-    store.delete_effect(&id).await?;
-    Ok(HttpResponse::NoContent().finish())
+    st.store.delete_effect(&id).await?;
+    Ok(Response::empty(204))
 }
 
 fn find_builtin<'a>(builtins: &'a [BuiltinEffect], id: &str) -> Option<&'a BuiltinEffect> {
     builtins.iter().find(|b| b.id() == id)
 }
 
-pub fn config(cfg: &mut web::ServiceConfig) {
-    cfg.service(list_effects)
-        .service(create_effect)
-        .service(get_effect)
-        .service(update_effect)
-        .service(delete_effect);
+pub fn routes(r: &mut Router, st: &ApiState) {
+    r.get("/effects", st.clone(), list_effects);
+    r.post("/effects", st.clone(), create_effect);
+    r.get("/effects/{id}", st.clone(), get_effect);
+    r.put("/effects/{id}", st.clone(), update_effect);
+    r.delete("/effects/{id}", st.clone(), delete_effect);
 }

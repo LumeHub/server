@@ -1,34 +1,28 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-
-use actix_web::{HttpResponse, Responder, delete, get, patch, post, put, web};
-use application::SceneRuntime;
 use domain::{BlendMode, ParamValue};
+use httpd::{Request, Response, Router};
 use serde::Deserialize;
-use store::{NewLayer, Store};
+use std::collections::HashMap;
+use store::NewLayer;
 
-use crate::error::ApiError;
+use crate::ApiState;
+use crate::error::ApiResult;
 use crate::types::{LayerResponse, SceneResponse};
 
-#[get("/scenes/active")]
-pub async fn get_active_scene(store: web::Data<Arc<Store>>) -> Result<impl Responder, ApiError> {
-    let layers = store.get_active_layers().await?;
-    Ok(HttpResponse::Ok().json(
-        layers
+pub async fn get_active_scene(st: ApiState, _req: Request) -> ApiResult {
+    let layers = st.store.get_active_layers().await?;
+    Ok(Response::json(
+        200,
+        &layers
             .into_iter()
             .map(LayerResponse::from)
             .collect::<Vec<_>>(),
     ))
 }
 
-#[delete("/scenes/active")]
-pub async fn clear_active_scene(
-    store: web::Data<Arc<Store>>,
-    runtime: web::Data<dyn SceneRuntime>,
-) -> Result<impl Responder, ApiError> {
-    store.clear_active_scene().await?;
-    runtime.halt();
-    Ok(HttpResponse::NoContent().finish())
+pub async fn clear_active_scene(st: ApiState, _req: Request) -> ApiResult {
+    st.store.clear_active_scene().await?;
+    st.runtime.halt();
+    Ok(Response::empty(204))
 }
 
 #[derive(Deserialize)]
@@ -52,31 +46,25 @@ impl From<AddLayerRequest> for NewLayer {
     }
 }
 
-#[put("/scenes/active")]
-pub async fn set_active_scene(
-    store: web::Data<Arc<Store>>,
-    runtime: web::Data<dyn SceneRuntime>,
-    body: web::Json<Vec<AddLayerRequest>>,
-) -> Result<impl Responder, ApiError> {
-    let layers: Vec<NewLayer> = body.into_inner().into_iter().map(Into::into).collect();
-    store.replace_active_layers(&layers).await?;
-    runtime.reload_active();
-    let layers = store.get_active_layers().await?;
-    Ok(HttpResponse::Ok().json(
-        layers
+pub async fn set_active_scene(st: ApiState, req: Request) -> ApiResult {
+    let body: Vec<AddLayerRequest> = req.json()?;
+    let layers: Vec<NewLayer> = body.into_iter().map(Into::into).collect();
+    st.store.replace_active_layers(&layers).await?;
+    st.runtime.reload_active();
+    let layers = st.store.get_active_layers().await?;
+    Ok(Response::json(
+        200,
+        &layers
             .into_iter()
             .map(LayerResponse::from)
             .collect::<Vec<_>>(),
     ))
 }
 
-#[post("/scenes/active/layers")]
-pub async fn add_layer(
-    store: web::Data<Arc<Store>>,
-    runtime: web::Data<dyn SceneRuntime>,
-    body: web::Json<AddLayerRequest>,
-) -> Result<impl Responder, ApiError> {
-    let layer = store
+pub async fn add_layer(st: ApiState, req: Request) -> ApiResult {
+    let body: AddLayerRequest = req.json()?;
+    let layer = st
+        .store
         .add_active_layer(
             &body.effect_id,
             &body.zone_id,
@@ -84,8 +72,8 @@ pub async fn add_layer(
             &body.params,
         )
         .await?;
-    runtime.reload_active();
-    Ok(HttpResponse::Created().json(LayerResponse::from(layer)))
+    st.runtime.reload_active();
+    Ok(Response::json(201, &LayerResponse::from(layer)))
 }
 
 #[derive(Deserialize)]
@@ -96,35 +84,27 @@ struct PatchLayerRequest {
     params: Option<HashMap<String, ParamValue>>,
 }
 
-#[patch("/scenes/active/layers/{id}")]
-pub async fn patch_layer(
-    store: web::Data<Arc<Store>>,
-    runtime: web::Data<dyn SceneRuntime>,
-    path: web::Path<String>,
-    body: web::Json<PatchLayerRequest>,
-) -> Result<impl Responder, ApiError> {
-    let id = path.into_inner();
-    let current = store.get_active_layer(&id).await?;
+pub async fn patch_layer(st: ApiState, req: Request) -> ApiResult {
+    let id = req.param("id").to_string();
+    let body: PatchLayerRequest = req.json()?;
+    let current = st.store.get_active_layer(&id).await?;
     let zone_id = body.zone_id.as_deref().unwrap_or(&current.zone_id);
     let enabled = body.enabled.unwrap_or(current.enabled);
     let blend_mode = body.blend_mode.unwrap_or(current.blend_mode);
     let params = body.params.clone().unwrap_or(current.params);
-    let layer = store
+    let layer = st
+        .store
         .update_active_layer(&id, zone_id, enabled, blend_mode, &params)
         .await?;
-    runtime.reload_active();
-    Ok(HttpResponse::Ok().json(LayerResponse::from(layer)))
+    st.runtime.reload_active();
+    Ok(Response::json(200, &LayerResponse::from(layer)))
 }
 
-#[delete("/scenes/active/layers/{id}")]
-pub async fn remove_layer(
-    store: web::Data<Arc<Store>>,
-    runtime: web::Data<dyn SceneRuntime>,
-    path: web::Path<String>,
-) -> Result<impl Responder, ApiError> {
-    store.remove_active_layer(&path.into_inner()).await?;
-    runtime.reload_active();
-    Ok(HttpResponse::NoContent().finish())
+pub async fn remove_layer(st: ApiState, req: Request) -> ApiResult {
+    let id = req.param("id").to_string();
+    st.store.remove_active_layer(&id).await?;
+    st.runtime.reload_active();
+    Ok(Response::empty(204))
 }
 
 #[derive(Deserialize)]
@@ -132,15 +112,11 @@ struct ReorderRequest {
     ordered_ids: Vec<String>,
 }
 
-#[put("/scenes/active/layers/reorder")]
-pub async fn reorder_layers(
-    store: web::Data<Arc<Store>>,
-    runtime: web::Data<dyn SceneRuntime>,
-    body: web::Json<ReorderRequest>,
-) -> Result<impl Responder, ApiError> {
-    store.reorder_active_layers(&body.ordered_ids).await?;
-    runtime.reload_active();
-    Ok(HttpResponse::NoContent().finish())
+pub async fn reorder_layers(st: ApiState, req: Request) -> ApiResult {
+    let body: ReorderRequest = req.json()?;
+    st.store.reorder_active_layers(&body.ordered_ids).await?;
+    st.runtime.reload_active();
+    Ok(Response::empty(204))
 }
 
 #[derive(Deserialize)]
@@ -148,46 +124,42 @@ struct SaveSceneRequest {
     name: String,
 }
 
-#[post("/scenes/active/save")]
-pub async fn save_active_scene(
-    store: web::Data<Arc<Store>>,
-    body: web::Json<SaveSceneRequest>,
-) -> Result<impl Responder, ApiError> {
-    let scene = store.save_active_as_scene(&body.name).await?;
-    Ok(HttpResponse::Created().json(SceneResponse::from(scene)))
+pub async fn save_active_scene(st: ApiState, req: Request) -> ApiResult {
+    let body: SaveSceneRequest = req.json()?;
+    let scene = st.store.save_active_as_scene(&body.name).await?;
+    Ok(Response::json(201, &SceneResponse::from(scene)))
 }
 
-#[post("/scenes/active/load/{scene_id}")]
-pub async fn load_scene_into_active(
-    store: web::Data<Arc<Store>>,
-    runtime: web::Data<dyn SceneRuntime>,
-    path: web::Path<String>,
-) -> Result<impl Responder, ApiError> {
-    store.load_scene_into_active(&path.into_inner()).await?;
-    runtime.reload_active();
-    Ok(HttpResponse::NoContent().finish())
+pub async fn load_scene_into_active(st: ApiState, req: Request) -> ApiResult {
+    let id = req.param("scene_id").to_string();
+    st.store.load_scene_into_active(&id).await?;
+    st.runtime.reload_active();
+    Ok(Response::empty(204))
 }
 
-#[put("/scenes/active/overwrite/{scene_id}")]
-pub async fn overwrite_scene_from_active(
-    store: web::Data<Arc<Store>>,
-    path: web::Path<String>,
-) -> Result<impl Responder, ApiError> {
-    store
-        .overwrite_scene_from_active(&path.into_inner())
-        .await?;
-    Ok(HttpResponse::NoContent().finish())
+pub async fn overwrite_scene_from_active(st: ApiState, req: Request) -> ApiResult {
+    let id = req.param("scene_id").to_string();
+    st.store.overwrite_scene_from_active(&id).await?;
+    Ok(Response::empty(204))
 }
 
-pub fn config(cfg: &mut web::ServiceConfig) {
-    cfg.service(get_active_scene)
-        .service(set_active_scene)
-        .service(clear_active_scene)
-        .service(add_layer)
-        .service(reorder_layers)
-        .service(patch_layer)
-        .service(remove_layer)
-        .service(save_active_scene)
-        .service(load_scene_into_active)
-        .service(overwrite_scene_from_active);
+pub fn routes(r: &mut Router, st: &ApiState) {
+    r.get("/scenes/active", st.clone(), get_active_scene);
+    r.put("/scenes/active", st.clone(), set_active_scene);
+    r.delete("/scenes/active", st.clone(), clear_active_scene);
+    r.post("/scenes/active/layers", st.clone(), add_layer);
+    r.put("/scenes/active/layers/reorder", st.clone(), reorder_layers);
+    r.patch("/scenes/active/layers/{id}", st.clone(), patch_layer);
+    r.delete("/scenes/active/layers/{id}", st.clone(), remove_layer);
+    r.post("/scenes/active/save", st.clone(), save_active_scene);
+    r.post(
+        "/scenes/active/load/{scene_id}",
+        st.clone(),
+        load_scene_into_active,
+    );
+    r.put(
+        "/scenes/active/overwrite/{scene_id}",
+        st.clone(),
+        overwrite_scene_from_active,
+    );
 }
