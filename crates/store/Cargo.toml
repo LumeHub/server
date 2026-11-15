@@ -6,9 +6,12 @@ edition = "2024"
 [dependencies]
 domain     = { workspace = true }
 serde_json = { workspace = true }
-sqlx       = { workspace = true }
+rusqlite   = { workspace = true }
 thiserror  = { workspace = true }
 uuid       = { workspace = true }
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["rt", "macros"] }
+rusqlite              = { workspace = true }
+tempfile              = { workspace = true }
+smol-macros           = { workspace = true }
+macro_rules_attribute = { workspace = true }

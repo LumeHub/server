@@ -1,15 +1,17 @@
 pub mod helpers;
 
 use domain::{BlendMode, ParamValue};
+use macro_rules_attribute::apply;
+use smol_macros::test;
 
-#[tokio::test]
+#[apply(test!)]
 async fn starts_empty() {
     let store = helpers::in_memory_store().await;
     let active = store.get_active_layers().await.unwrap();
     assert!(active.is_empty());
 }
 
-#[tokio::test]
+#[apply(test!)]
 async fn layer_lifecycle() {
     let store = helpers::in_memory_store().await;
     let effect = store.create_effect("fx", "code", &[]).await.unwrap();
@@ -38,7 +40,7 @@ async fn layer_lifecycle() {
     assert!(active.is_empty());
 }
 
-#[tokio::test]
+#[apply(test!)]
 async fn clear() {
     let store = helpers::in_memory_store().await;
     let effect = store.create_effect("fx", "code", &[]).await.unwrap();
@@ -58,7 +60,7 @@ async fn clear() {
     assert!(active.is_empty());
 }
 
-#[tokio::test]
+#[apply(test!)]
 async fn save_and_load() {
     let store = helpers::in_memory_store().await;
     let effect = store.create_effect("fx", "code", &[]).await.unwrap();
@@ -92,7 +94,7 @@ async fn save_and_load() {
     assert!(matches!(active[0].blend_mode, BlendMode::Add));
 }
 
-#[tokio::test]
+#[apply(test!)]
 async fn load_nonexistent_returns_not_found() {
     let store = helpers::in_memory_store().await;
     let err = store
@@ -102,7 +104,7 @@ async fn load_nonexistent_returns_not_found() {
     assert!(matches!(err, store::StoreError::NotFound));
 }
 
-#[tokio::test]
+#[apply(test!)]
 async fn overwrite_and_cannot_overwrite_self() {
     let store = helpers::in_memory_store().await;
     let effect = store.create_effect("fx", "code", &[]).await.unwrap();

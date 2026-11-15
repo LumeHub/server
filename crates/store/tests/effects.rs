@@ -1,6 +1,8 @@
 pub mod helpers;
 
 use domain::{ParamControl, ParamDef, ParamValue, Rgb};
+use macro_rules_attribute::apply;
+use smol_macros::test;
 
 fn sample_params() -> Vec<ParamDef> {
     vec![
@@ -37,7 +39,7 @@ fn sample_params() -> Vec<ParamDef> {
     ]
 }
 
-#[tokio::test]
+#[apply(test!)]
 async fn create_with_params_round_trips() {
     let store = helpers::in_memory_store().await;
     let params = sample_params();
@@ -68,7 +70,7 @@ async fn create_with_params_round_trips() {
     );
 }
 
-#[tokio::test]
+#[apply(test!)]
 async fn list_effects() {
     let store = helpers::in_memory_store().await;
     store
@@ -83,7 +85,7 @@ async fn list_effects() {
     assert_eq!(effects.len(), 2);
 }
 
-#[tokio::test]
+#[apply(test!)]
 async fn update_effect() {
     let store = helpers::in_memory_store().await;
     let effect = store.create_effect("old", "code", &[]).await.unwrap();
@@ -96,7 +98,7 @@ async fn update_effect() {
     assert_eq!(updated.params.len(), 4);
 }
 
-#[tokio::test]
+#[apply(test!)]
 async fn delete_effect() {
     let store = helpers::in_memory_store().await;
     let effect = store.create_effect("tmp", "code", &[]).await.unwrap();

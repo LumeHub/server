@@ -6,7 +6,6 @@ use mqtt::MqttConfig;
 use mqtt::ctx::Ctx;
 use mqtt::topics::Topics;
 use rumqttc::{AsyncClient, MqttOptions};
-use sqlx::sqlite::SqlitePoolOptions;
 use store::Store;
 
 pub struct MockRuntime {
@@ -58,12 +57,7 @@ impl SceneRuntime for MockRuntime {
 }
 
 pub async fn in_memory_store() -> Arc<Store> {
-    let pool = SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect("sqlite::memory:")
-        .await
-        .unwrap();
-    Arc::new(Store::from_pool(pool).await.unwrap())
+    Arc::new(Store::open_in_memory().await.unwrap())
 }
 
 /// Create an AsyncClient whose eventloop is immediately dropped.

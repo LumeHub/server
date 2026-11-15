@@ -1,4 +1,4 @@
-use sqlx::{FromRow, SqlitePool};
+use rusqlite::{Connection, OptionalExtension, Row, params};
 use uuid::Uuid;
 
 use crate::StoreError;
@@ -12,104 +12,71 @@ pub struct ZoneRecord {
     pub transition_length: u32,
 }
 
-#[derive(FromRow)]
-struct ZoneRow {
-    id: String,
-    name: String,
-    start_pixel: i64,
-    end_pixel: i64,
-    transition_length: i64,
+const COLUMNS: &str = "id, name, start_pixel, end_pixel, transition_length";
+
+fn from_row(r: &Row) -> rusqlite::Result<ZoneRecord> {
+    Ok(ZoneRecord {
+        id: r.get(0)?,
+        name: r.get(1)?,
+        start_pixel: r.get::<_, i64>(2)? as u32,
+        end_pixel: r.get::<_, i64>(3)? as u32,
+        transition_length: r.get::<_, i64>(4)? as u32,
+    })
 }
 
-impl From<ZoneRow> for ZoneRecord {
-    fn from(r: ZoneRow) -> Self {
-        Self {
-            id: r.id,
-            name: r.name,
-            start_pixel: r.start_pixel as u32,
-            end_pixel: r.end_pixel as u32,
-            transition_length: r.transition_length as u32,
-        }
-    }
+pub fn get_all(conn: &Connection) -> Result<Vec<ZoneRecord>, StoreError> {
+    let mut stmt = conn.prepare(&format!("SELECT {COLUMNS} FROM zones ORDER BY name"))?;
+    let rows = stmt.query_map([], from_row)?;
+    Ok(rows.collect::<Result<_, _>>()?)
 }
 
-pub async fn get_all(pool: &SqlitePool) -> Result<Vec<ZoneRecord>, StoreError> {
-    let rows: Vec<ZoneRow> = sqlx::query_as::<_, ZoneRow>(
-        "SELECT id, name, start_pixel, end_pixel, transition_length FROM zones ORDER BY name",
+pub fn get_one(conn: &Connection, id: &str) -> Result<ZoneRecord, StoreError> {
+    conn.query_row(
+        &format!("SELECT {COLUMNS} FROM zones WHERE id = ?"),
+        [id],
+        from_row,
     )
-    .fetch_all(pool)
-    .await?;
-    Ok(rows.into_iter().map(ZoneRecord::from).collect())
-}
-
-pub async fn get_one(pool: &SqlitePool, id: &str) -> Result<ZoneRecord, StoreError> {
-    sqlx::query_as::<_, ZoneRow>(
-        "SELECT id, name, start_pixel, end_pixel, transition_length FROM zones WHERE id = ?",
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await?
-    .map(ZoneRecord::from)
+    .optional()?
     .ok_or(StoreError::NotFound)
 }
 
-pub async fn create(
-    pool: &SqlitePool,
+pub fn create(
+    conn: &Connection,
     name: &str,
     start_pixel: u32,
     end_pixel: u32,
     transition_length: u32,
 ) -> Result<ZoneRecord, StoreError> {
     let id = Uuid::new_v4().to_string();
-    sqlx::query(
+    conn.execute(
         "INSERT INTO zones (id, name, start_pixel, end_pixel, transition_length)
          VALUES (?, ?, ?, ?, ?)",
-    )
-    .bind(&id)
-    .bind(name)
-    .bind(start_pixel)
-    .bind(end_pixel)
-    .bind(transition_length)
-    .execute(pool)
-    .await?;
-    get_one(pool, &id).await
+        params![id, name, start_pixel, end_pixel, transition_length],
+    )?;
+    get_one(conn, &id)
 }
 
-pub async fn update(
-    pool: &SqlitePool,
+pub fn update(
+    conn: &Connection,
     id: &str,
     name: &str,
     start_pixel: u32,
     end_pixel: u32,
     transition_length: u32,
 ) -> Result<ZoneRecord, StoreError> {
-    let rows_affected = sqlx::query(
+    let rows_affected = conn.execute(
         "UPDATE zones SET name = ?, start_pixel = ?, end_pixel = ?, transition_length = ?
          WHERE id = ?",
-    )
-    .bind(name)
-    .bind(start_pixel)
-    .bind(end_pixel)
-    .bind(transition_length)
-    .bind(id)
-    .execute(pool)
-    .await?
-    .rows_affected();
-
+        params![name, start_pixel, end_pixel, transition_length, id],
+    )?;
     if rows_affected == 0 {
         return Err(StoreError::NotFound);
     }
-    get_one(pool, id).await
+    get_one(conn, id)
 }
 
-pub async fn delete(pool: &SqlitePool, id: &str) -> Result<(), StoreError> {
-    let rows_affected = sqlx::query("DELETE FROM zones WHERE id = ?")
-        .bind(id)
-        .execute(pool)
-        .await?
-        .rows_affected();
-
-    if rows_affected == 0 {
+pub fn delete(conn: &Connection, id: &str) -> Result<(), StoreError> {
+    if conn.execute("DELETE FROM zones WHERE id = ?", [id])? == 0 {
         return Err(StoreError::NotFound);
     }
     Ok(())

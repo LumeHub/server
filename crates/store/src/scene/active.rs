@@ -1,72 +1,59 @@
-use sqlx::SqlitePool;
+use rusqlite::{Connection, params};
 use uuid::Uuid;
 
 use crate::StoreError;
 
-use super::layers::{NewLayer, blend_mode_to_str, clear_layers, copy_layers};
+use super::layers::{INSERT, NewLayer, blend_mode_to_str, clear_layers, copy_layers};
 use super::scenes::{SceneRecord, create, get_one};
 
-pub async fn replace_active_layers(
-    pool: &SqlitePool,
-    layers: &[NewLayer],
-) -> Result<(), StoreError> {
-    let entries = layers
-        .iter()
-        .enumerate()
-        .map(|(pos, l)| {
-            serde_json::to_string(&l.params)
-                .map(|params| (Uuid::new_v4().to_string(), l, params, pos as i64))
-                .map_err(StoreError::from)
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-
-    let mut tx = pool.begin().await?;
-
-    sqlx::query("DELETE FROM scene_layers WHERE scene_id = ?")
-        .bind(super::ACTIVE_SCENE_ID)
-        .execute(&mut *tx)
-        .await?;
-
-    if !entries.is_empty() {
-        sqlx::QueryBuilder::new(
-            "INSERT INTO scene_layers (id, scene_id, effect_id, zone_id, blend_mode, params, enabled, position) ",
-        )
-        .push_values(&entries, |mut b, (id, layer, params, pos)| {
-            b.push_bind(id.as_str())
-                .push_bind(super::ACTIVE_SCENE_ID)
-                .push_bind(layer.effect_id.as_str())
-                .push_bind(layer.zone_id.as_str())
-                .push_bind(blend_mode_to_str(layer.blend_mode))
-                .push_bind(params.as_str())
-                .push_bind(1i64)
-                .push_bind(*pos);
-        })
-        .build()
-        .execute(&mut *tx)
-        .await?;
+pub fn replace_active_layers(conn: &Connection, layers: &[NewLayer]) -> Result<(), StoreError> {
+    let tx = conn.unchecked_transaction()?;
+    clear_layers(&tx, super::ACTIVE_SCENE_ID)?;
+    {
+        let mut stmt = tx.prepare(INSERT)?;
+        for (pos, l) in layers.iter().enumerate() {
+            stmt.execute(params![
+                Uuid::new_v4().to_string(),
+                super::ACTIVE_SCENE_ID,
+                l.effect_id,
+                l.zone_id,
+                blend_mode_to_str(l.blend_mode),
+                serde_json::to_string(&l.params)?,
+                1i64,
+                pos as i64
+            ])?;
+        }
     }
-
-    tx.commit().await?;
+    tx.commit()?;
     Ok(())
 }
 
-pub async fn load_into_active(pool: &SqlitePool, scene_id: &str) -> Result<(), StoreError> {
-    get_one(pool, scene_id).await?;
-    clear_layers(pool, super::ACTIVE_SCENE_ID).await?;
-    copy_layers(pool, scene_id, super::ACTIVE_SCENE_ID).await
+/// Replace the active layers with a copy of `scene_id`'s layers, atomically:
+/// a failure halfway leaves the previous active layers in place.
+pub fn load_into_active(conn: &Connection, scene_id: &str) -> Result<(), StoreError> {
+    get_one(conn, scene_id)?;
+    let tx = conn.unchecked_transaction()?;
+    clear_layers(&tx, super::ACTIVE_SCENE_ID)?;
+    copy_layers(&tx, scene_id, super::ACTIVE_SCENE_ID)?;
+    tx.commit()?;
+    Ok(())
 }
 
-pub async fn save_active_as(pool: &SqlitePool, name: &str) -> Result<SceneRecord, StoreError> {
-    let scene = create(pool, name).await?;
-    copy_layers(pool, super::ACTIVE_SCENE_ID, &scene.id).await?;
+pub fn save_active_as(conn: &Connection, name: &str) -> Result<SceneRecord, StoreError> {
+    let tx = conn.unchecked_transaction()?;
+    let scene = create(&tx, name)?;
+    copy_layers(&tx, super::ACTIVE_SCENE_ID, &scene.id)?;
+    tx.commit()?;
     Ok(scene)
 }
 
-pub async fn overwrite_from_active(pool: &SqlitePool, id: &str) -> Result<(), StoreError> {
+pub fn overwrite_from_active(conn: &Connection, id: &str) -> Result<(), StoreError> {
     if id == super::ACTIVE_SCENE_ID {
         return Err(StoreError::NotFound);
     }
-    clear_layers(pool, id).await?;
-    copy_layers(pool, super::ACTIVE_SCENE_ID, id).await?;
+    let tx = conn.unchecked_transaction()?;
+    clear_layers(&tx, id)?;
+    copy_layers(&tx, super::ACTIVE_SCENE_ID, id)?;
+    tx.commit()?;
     Ok(())
 }

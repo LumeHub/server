@@ -1,6 +1,6 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
-use sqlx::{FromRow, SqlitePool};
+use rusqlite::{Connection, OptionalExtension, Row, params};
 use uuid::Uuid;
 
 use domain::{BlendMode, ParamValue};
@@ -19,16 +19,15 @@ pub struct LayerRecord {
     pub position: u32,
 }
 
-#[derive(FromRow)]
-pub(super) struct LayerRow {
-    pub id: String,
-    pub scene_id: String,
-    pub effect_id: String,
-    pub zone_id: String,
-    pub blend_mode: String,
-    pub params: String,
-    pub enabled: i64,
-    pub position: i64,
+struct LayerRow {
+    id: String,
+    scene_id: String,
+    effect_id: String,
+    zone_id: String,
+    blend_mode: String,
+    params: String,
+    enabled: i64,
+    position: i64,
 }
 
 pub struct NewLayer {
@@ -38,7 +37,28 @@ pub struct NewLayer {
     pub params: HashMap<String, ParamValue>,
 }
 
-pub(super) fn layer_from_row(row: LayerRow) -> Result<LayerRecord, StoreError> {
+const SELECT: &str =
+    "SELECT id, scene_id, effect_id, zone_id, blend_mode, params, enabled, position
+     FROM scene_layers";
+
+pub(super) const INSERT: &str = "INSERT INTO scene_layers
+     (id, scene_id, effect_id, zone_id, blend_mode, params, enabled, position)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+
+fn read_row(r: &Row) -> rusqlite::Result<LayerRow> {
+    Ok(LayerRow {
+        id: r.get(0)?,
+        scene_id: r.get(1)?,
+        effect_id: r.get(2)?,
+        zone_id: r.get(3)?,
+        blend_mode: r.get(4)?,
+        params: r.get(5)?,
+        enabled: r.get(6)?,
+        position: r.get(7)?,
+    })
+}
+
+fn layer_from_row(row: LayerRow) -> Result<LayerRecord, StoreError> {
     Ok(LayerRecord {
         blend_mode: BlendMode::from(row.blend_mode.as_str()),
         params: serde_json::from_str(&row.params)?,
@@ -60,46 +80,36 @@ pub(super) fn blend_mode_to_str(mode: BlendMode) -> &'static str {
     }
 }
 
-pub async fn get_layers(pool: &SqlitePool, scene_id: &str) -> Result<Vec<LayerRecord>, StoreError> {
-    let rows: Vec<LayerRow> = sqlx::query_as::<_, LayerRow>(
-        "SELECT id, scene_id, effect_id, zone_id, blend_mode, params, enabled, position
-         FROM scene_layers WHERE scene_id = ? ORDER BY position",
-    )
-    .bind(scene_id)
-    .fetch_all(pool)
-    .await?;
-    rows.into_iter().map(layer_from_row).collect()
+pub fn get_layers(conn: &Connection, scene_id: &str) -> Result<Vec<LayerRecord>, StoreError> {
+    let mut stmt = conn.prepare(&format!("{SELECT} WHERE scene_id = ? ORDER BY position"))?;
+    let rows = stmt.query_map([scene_id], read_row)?;
+    rows.map(|r| layer_from_row(r?)).collect()
 }
 
-pub async fn get_layer(pool: &SqlitePool, id: &str) -> Result<LayerRecord, StoreError> {
-    let row: Option<LayerRow> = sqlx::query_as::<_, LayerRow>(
-        "SELECT id, scene_id, effect_id, zone_id, blend_mode, params, enabled, position
-         FROM scene_layers WHERE id = ?",
-    )
-    .bind(id)
-    .fetch_optional(pool)
-    .await?;
+pub fn get_layer(conn: &Connection, id: &str) -> Result<LayerRecord, StoreError> {
+    let row = conn
+        .query_row(&format!("{SELECT} WHERE id = ?"), [id], read_row)
+        .optional()?;
     layer_from_row(row.ok_or(StoreError::NotFound)?)
 }
 
-pub async fn get_layer_in_scene(
-    pool: &SqlitePool,
+pub fn get_layer_in_scene(
+    conn: &Connection,
     id: &str,
     scene_id: &str,
 ) -> Result<LayerRecord, StoreError> {
-    let row: Option<LayerRow> = sqlx::query_as::<_, LayerRow>(
-        "SELECT id, scene_id, effect_id, zone_id, blend_mode, params, enabled, position
-         FROM scene_layers WHERE id = ? AND scene_id = ?",
-    )
-    .bind(id)
-    .bind(scene_id)
-    .fetch_optional(pool)
-    .await?;
+    let row = conn
+        .query_row(
+            &format!("{SELECT} WHERE id = ? AND scene_id = ?"),
+            [id, scene_id],
+            read_row,
+        )
+        .optional()?;
     layer_from_row(row.ok_or(StoreError::NotFound)?)
 }
 
-pub async fn add_layer(
-    pool: &SqlitePool,
+pub fn add_layer(
+    conn: &Connection,
     scene_id: &str,
     effect_id: &str,
     zone_id: &str,
@@ -107,35 +117,33 @@ pub async fn add_layer(
     params: &HashMap<String, ParamValue>,
 ) -> Result<LayerRecord, StoreError> {
     let id = Uuid::new_v4().to_string();
-    let blend_str = blend_mode_to_str(blend_mode);
     let params_json = serde_json::to_string(params)?;
 
-    let position: i64 = sqlx::query_scalar(
+    let position: i64 = conn.query_row(
         "SELECT COALESCE(MAX(position), -1) + 1 FROM scene_layers WHERE scene_id = ?",
-    )
-    .bind(scene_id)
-    .fetch_one(pool)
-    .await?;
+        [scene_id],
+        |r| r.get(0),
+    )?;
 
-    sqlx::query(
-        "INSERT INTO scene_layers (id, scene_id, effect_id, zone_id, blend_mode, params, enabled, position)
-         VALUES (?, ?, ?, ?, ?, ?, 1, ?)",
-    )
-    .bind(&id)
-    .bind(scene_id)
-    .bind(effect_id)
-    .bind(zone_id)
-    .bind(blend_str)
-    .bind(&params_json)
-    .bind(position)
-    .execute(pool)
-    .await?;
+    conn.execute(
+        INSERT,
+        params![
+            id,
+            scene_id,
+            effect_id,
+            zone_id,
+            blend_mode_to_str(blend_mode),
+            params_json,
+            1i64,
+            position
+        ],
+    )?;
 
-    get_layer(pool, &id).await
+    get_layer(conn, &id)
 }
 
-pub async fn update_layer(
-    pool: &SqlitePool,
+pub fn update_layer(
+    conn: &Connection,
     id: &str,
     scene_id: &str,
     zone_id: &str,
@@ -143,45 +151,38 @@ pub async fn update_layer(
     blend_mode: BlendMode,
     params: &HashMap<String, ParamValue>,
 ) -> Result<LayerRecord, StoreError> {
-    let blend_str = blend_mode_to_str(blend_mode);
     let params_json = serde_json::to_string(params)?;
-    let enabled_int = enabled as i64;
-
-    let rows_affected = sqlx::query(
-        "UPDATE scene_layers SET zone_id = ?, enabled = ?, blend_mode = ?, params = ? WHERE id = ? AND scene_id = ?",
-    )
-    .bind(zone_id)
-    .bind(enabled_int)
-    .bind(blend_str)
-    .bind(&params_json)
-    .bind(id)
-    .bind(scene_id)
-    .execute(pool)
-    .await?
-    .rows_affected();
-
+    let rows_affected = conn.execute(
+        "UPDATE scene_layers SET zone_id = ?, enabled = ?, blend_mode = ?, params = ?
+         WHERE id = ? AND scene_id = ?",
+        params![
+            zone_id,
+            enabled as i64,
+            blend_mode_to_str(blend_mode),
+            params_json,
+            id,
+            scene_id
+        ],
+    )?;
     if rows_affected == 0 {
         return Err(StoreError::NotFound);
     }
-    get_layer(pool, id).await
+    get_layer(conn, id)
 }
 
-pub async fn remove_layer(pool: &SqlitePool, id: &str, scene_id: &str) -> Result<(), StoreError> {
-    let rows_affected = sqlx::query("DELETE FROM scene_layers WHERE id = ? AND scene_id = ?")
-        .bind(id)
-        .bind(scene_id)
-        .execute(pool)
-        .await?
-        .rows_affected();
-
+pub fn remove_layer(conn: &Connection, id: &str, scene_id: &str) -> Result<(), StoreError> {
+    let rows_affected = conn.execute(
+        "DELETE FROM scene_layers WHERE id = ? AND scene_id = ?",
+        [id, scene_id],
+    )?;
     if rows_affected == 0 {
         return Err(StoreError::NotFound);
     }
     Ok(())
 }
 
-pub async fn reorder_layers(
-    pool: &SqlitePool,
+pub fn reorder_layers(
+    conn: &Connection,
     scene_id: &str,
     ordered_ids: &[String],
 ) -> Result<(), StoreError> {
@@ -189,68 +190,52 @@ pub async fn reorder_layers(
         return Ok(());
     }
 
-    let existing: std::collections::HashSet<String> = get_layers(pool, scene_id)
-        .await?
+    let existing: HashSet<String> = get_layers(conn, scene_id)?
         .into_iter()
         .map(|l| l.id)
         .collect();
-
     if !ordered_ids.iter().all(|id| existing.contains(id)) {
         return Err(StoreError::NotFound);
     }
 
-    let mut tx = pool.begin().await?;
-    for (position, id) in ordered_ids.iter().enumerate() {
-        sqlx::query("UPDATE scene_layers SET position = ? WHERE id = ? AND scene_id = ?")
-            .bind(position as i64)
-            .bind(id)
-            .bind(scene_id)
-            .execute(&mut *tx)
-            .await?;
+    let tx = conn.unchecked_transaction()?;
+    {
+        let mut stmt =
+            tx.prepare("UPDATE scene_layers SET position = ? WHERE id = ? AND scene_id = ?")?;
+        for (position, id) in ordered_ids.iter().enumerate() {
+            stmt.execute(params![position as i64, id, scene_id])?;
+        }
     }
-    tx.commit().await?;
+    tx.commit()?;
     Ok(())
 }
 
-pub async fn clear_layers(pool: &SqlitePool, scene_id: &str) -> Result<(), StoreError> {
-    sqlx::query("DELETE FROM scene_layers WHERE scene_id = ?")
-        .bind(scene_id)
-        .execute(pool)
-        .await?;
+pub fn clear_layers(conn: &Connection, scene_id: &str) -> Result<(), StoreError> {
+    conn.execute("DELETE FROM scene_layers WHERE scene_id = ?", [scene_id])?;
     Ok(())
 }
 
-pub(super) async fn copy_layers(
-    pool: &SqlitePool,
+/// Copy every layer of `from_scene_id` into `to_scene_id`, preserving order,
+/// enabled flag and params. Callers wrap this in a transaction when it must be
+/// atomic with other writes.
+pub(super) fn copy_layers(
+    conn: &Connection,
     from_scene_id: &str,
     to_scene_id: &str,
 ) -> Result<(), StoreError> {
-    let layers = get_layers(pool, from_scene_id).await?;
-    if layers.is_empty() {
-        return Ok(());
+    let layers = get_layers(conn, from_scene_id)?;
+    let mut stmt = conn.prepare(INSERT)?;
+    for l in &layers {
+        stmt.execute(params![
+            Uuid::new_v4().to_string(),
+            to_scene_id,
+            l.effect_id,
+            l.zone_id,
+            blend_mode_to_str(l.blend_mode),
+            serde_json::to_string(&l.params)?,
+            l.enabled as i64,
+            l.position as i64
+        ])?;
     }
-
-    let entries = layers
-        .iter()
-        .map(|l| serde_json::to_string(&l.params).map(|p| (Uuid::new_v4().to_string(), l, p)))
-        .collect::<Result<Vec<_>, _>>()?;
-
-    sqlx::QueryBuilder::new(
-        "INSERT INTO scene_layers (id, scene_id, effect_id, zone_id, blend_mode, params, enabled, position) ",
-    )
-    .push_values(&entries, |mut b, (id, layer, params)| {
-        b.push_bind(id.as_str())
-            .push_bind(to_scene_id)
-            .push_bind(layer.effect_id.as_str())
-            .push_bind(layer.zone_id.as_str())
-            .push_bind(blend_mode_to_str(layer.blend_mode))
-            .push_bind(params.as_str())
-            .push_bind(layer.enabled as i64)
-            .push_bind(layer.position as i64);
-    })
-    .build()
-    .execute(pool)
-    .await?;
-
     Ok(())
 }

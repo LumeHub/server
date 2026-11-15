@@ -1,6 +1,9 @@
 pub mod helpers;
 
-#[tokio::test]
+use macro_rules_attribute::apply;
+use smol_macros::test;
+
+#[apply(test!)]
 async fn create_and_get_zone() {
     let store = helpers::in_memory_store().await;
     let zone = store.create_zone("living room", 0, 59, 8).await.unwrap();
@@ -14,7 +17,7 @@ async fn create_and_get_zone() {
     assert_eq!(fetched.name, "living room");
 }
 
-#[tokio::test]
+#[apply(test!)]
 async fn list_zones() {
     let store = helpers::in_memory_store().await;
     store.create_zone("a", 0, 10, 4).await.unwrap();
@@ -23,7 +26,7 @@ async fn list_zones() {
     assert_eq!(zones.len(), 2);
 }
 
-#[tokio::test]
+#[apply(test!)]
 async fn update_zone() {
     let store = helpers::in_memory_store().await;
     let zone = store.create_zone("old", 0, 10, 8).await.unwrap();
@@ -34,7 +37,7 @@ async fn update_zone() {
     assert_eq!(updated.transition_length, 16);
 }
 
-#[tokio::test]
+#[apply(test!)]
 async fn delete_zone() {
     let store = helpers::in_memory_store().await;
     let zone = store.create_zone("tmp", 0, 10, 8).await.unwrap();
@@ -43,7 +46,7 @@ async fn delete_zone() {
     assert!(matches!(err, store::StoreError::NotFound));
 }
 
-#[tokio::test]
+#[apply(test!)]
 async fn get_nonexistent_returns_404() {
     let store = helpers::in_memory_store().await;
     let err = store.get_zone("nonexistent").await.unwrap_err();

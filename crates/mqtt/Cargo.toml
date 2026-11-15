@@ -15,4 +15,3 @@ rumqttc     = "0.24"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros"] }
-sqlx  = { workspace = true }

@@ -47,7 +47,10 @@ thiserror    = "2"
 mdns-sd      = "0.18"
 tokio        = { version = "1", features = ["sync", "fs"] }
 futures-util = "0.3"
-sqlx         = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls", "migrate"] }
+rusqlite     = { version = "0.43", features = ["bundled"] }
+smol         = "2"
+smol-macros  = "0.1"
+macro_rules_attribute = "0.2"
 toml         = "0.8"
 uuid         = { version = "1", features = ["v4"] }
 

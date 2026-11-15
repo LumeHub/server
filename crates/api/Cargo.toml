@@ -16,4 +16,3 @@ tokio        = { workspace = true }
 futures-util = { workspace = true }
 
 [dev-dependencies]
-sqlx = { workspace = true }

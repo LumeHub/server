@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use application::{SceneRuntime, SceneSnapshot};
 use domain::Rgb;
-use sqlx::sqlite::SqlitePoolOptions;
 use store::Store;
 
 pub struct MockRuntime;
@@ -26,12 +25,7 @@ impl SceneRuntime for MockRuntime {
 }
 
 pub async fn make_store() -> Arc<Store> {
-    let pool = SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect("sqlite::memory:")
-        .await
-        .unwrap();
-    Arc::new(Store::from_pool(pool).await.unwrap())
+    Arc::new(Store::open_in_memory().await.unwrap())
 }
 
 pub fn mock_runtime() -> Arc<dyn SceneRuntime> {

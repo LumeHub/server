@@ -1,8 +1,10 @@
 pub mod helpers;
 
 use domain::{BlendMode, ParamValue};
+use macro_rules_attribute::apply;
+use smol_macros::test;
 
-#[tokio::test]
+#[apply(test!)]
 async fn add_and_get() {
     let store = helpers::in_memory_store().await;
     let effect = store.create_effect("fx", "code", &[]).await.unwrap();
@@ -36,7 +38,7 @@ async fn add_and_get() {
     assert_eq!(layers[1].id, l1.id);
 }
 
-#[tokio::test]
+#[apply(test!)]
 async fn update_layer() {
     let store = helpers::in_memory_store().await;
     let effect = store.create_effect("fx", "code", &[]).await.unwrap();
@@ -69,7 +71,7 @@ async fn update_layer() {
     assert_eq!(updated.params["speed"], ParamValue::Number(2.0));
 }
 
-#[tokio::test]
+#[apply(test!)]
 async fn remove_layer() {
     let store = helpers::in_memory_store().await;
     let effect = store.create_effect("fx", "code", &[]).await.unwrap();
@@ -91,7 +93,7 @@ async fn remove_layer() {
     assert!(layers.is_empty());
 }
 
-#[tokio::test]
+#[apply(test!)]
 async fn reorder_layers() {
     let store = helpers::in_memory_store().await;
     let effect = store.create_effect("fx", "code", &[]).await.unwrap();
@@ -140,7 +142,7 @@ async fn reorder_layers() {
     assert_eq!(layers[2].id, l0.id);
 }
 
-#[tokio::test]
+#[apply(test!)]
 async fn deleting_scene_cascades_to_layers() {
     let store = helpers::in_memory_store().await;
     let effect = store.create_effect("fx", "code", &[]).await.unwrap();

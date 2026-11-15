@@ -1,4 +1,4 @@
-use sqlx::{FromRow, SqlitePool};
+use rusqlite::{Connection, OptionalExtension, Row, params};
 use uuid::Uuid;
 
 use crate::StoreError;
@@ -9,73 +9,51 @@ pub struct SceneRecord {
     pub name: String,
 }
 
-#[derive(FromRow)]
-pub(super) struct SceneRow {
-    pub id: String,
-    pub name: String,
-}
-
-pub async fn get_all(pool: &SqlitePool) -> Result<Vec<SceneRecord>, StoreError> {
-    let rows: Vec<SceneRow> =
-        sqlx::query_as::<_, SceneRow>("SELECT id, name FROM scenes WHERE id != ? ORDER BY name")
-            .bind(super::ACTIVE_SCENE_ID)
-            .fetch_all(pool)
-            .await?;
-    Ok(rows
-        .into_iter()
-        .map(|r| SceneRecord {
-            id: r.id,
-            name: r.name,
-        })
-        .collect())
-}
-
-pub async fn get_one(pool: &SqlitePool, id: &str) -> Result<SceneRecord, StoreError> {
-    let row: Option<SceneRow> =
-        sqlx::query_as::<_, SceneRow>("SELECT id, name FROM scenes WHERE id = ?")
-            .bind(id)
-            .fetch_optional(pool)
-            .await?;
-    row.map(|r| SceneRecord {
-        id: r.id,
-        name: r.name,
+fn from_row(r: &Row) -> rusqlite::Result<SceneRecord> {
+    Ok(SceneRecord {
+        id: r.get(0)?,
+        // The reserved active-scene row has a NULL name.
+        name: r.get::<_, Option<String>>(1)?.unwrap_or_default(),
     })
-    .ok_or(StoreError::NotFound)
 }
 
-pub async fn create(pool: &SqlitePool, name: &str) -> Result<SceneRecord, StoreError> {
+pub fn get_all(conn: &Connection) -> Result<Vec<SceneRecord>, StoreError> {
+    let mut stmt = conn.prepare("SELECT id, name FROM scenes WHERE id != ? ORDER BY name")?;
+    let rows = stmt.query_map([super::ACTIVE_SCENE_ID], from_row)?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
+pub fn get_one(conn: &Connection, id: &str) -> Result<SceneRecord, StoreError> {
+    conn.query_row("SELECT id, name FROM scenes WHERE id = ?", [id], from_row)
+        .optional()?
+        .ok_or(StoreError::NotFound)
+}
+
+pub fn create(conn: &Connection, name: &str) -> Result<SceneRecord, StoreError> {
     let id = Uuid::new_v4().to_string();
-    sqlx::query("INSERT INTO scenes (id, name) VALUES (?, ?)")
-        .bind(&id)
-        .bind(name)
-        .execute(pool)
-        .await?;
-    get_one(pool, &id).await
+    conn.execute(
+        "INSERT INTO scenes (id, name) VALUES (?, ?)",
+        params![id, name],
+    )?;
+    get_one(conn, &id)
 }
 
-pub async fn update(pool: &SqlitePool, id: &str, name: &str) -> Result<SceneRecord, StoreError> {
-    let rows_affected = sqlx::query("UPDATE scenes SET name = ? WHERE id = ? AND id != ?")
-        .bind(name)
-        .bind(id)
-        .bind(super::ACTIVE_SCENE_ID)
-        .execute(pool)
-        .await?
-        .rows_affected();
-
+pub fn update(conn: &Connection, id: &str, name: &str) -> Result<SceneRecord, StoreError> {
+    let rows_affected = conn.execute(
+        "UPDATE scenes SET name = ? WHERE id = ? AND id != ?",
+        params![name, id, super::ACTIVE_SCENE_ID],
+    )?;
     if rows_affected == 0 {
         return Err(StoreError::NotFound);
     }
-    get_one(pool, id).await
+    get_one(conn, id)
 }
 
-pub async fn delete(pool: &SqlitePool, id: &str) -> Result<(), StoreError> {
-    let rows_affected = sqlx::query("DELETE FROM scenes WHERE id = ? AND id != ?")
-        .bind(id)
-        .bind(super::ACTIVE_SCENE_ID)
-        .execute(pool)
-        .await?
-        .rows_affected();
-
+pub fn delete(conn: &Connection, id: &str) -> Result<(), StoreError> {
+    let rows_affected = conn.execute(
+        "DELETE FROM scenes WHERE id = ? AND id != ?",
+        params![id, super::ACTIVE_SCENE_ID],
+    )?;
     if rows_affected == 0 {
         return Err(StoreError::NotFound);
     }

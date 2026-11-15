@@ -1,4 +1,4 @@
-use sqlx::{FromRow, SqlitePool};
+use rusqlite::{Connection, OptionalExtension, Row, params};
 use uuid::Uuid;
 
 use domain::ParamDef;
@@ -13,12 +13,20 @@ pub struct EffectRecord {
     pub params: Vec<ParamDef>,
 }
 
-#[derive(FromRow)]
 struct EffectRow {
     id: String,
     name: String,
     script: String,
     params: String,
+}
+
+fn read_row(r: &Row) -> rusqlite::Result<EffectRow> {
+    Ok(EffectRow {
+        id: r.get(0)?,
+        name: r.get(1)?,
+        script: r.get(2)?,
+        params: r.get(3)?,
+    })
 }
 
 fn from_row(row: EffectRow) -> Result<EffectRecord, StoreError> {
@@ -30,74 +38,58 @@ fn from_row(row: EffectRow) -> Result<EffectRecord, StoreError> {
     })
 }
 
-pub async fn get_all(pool: &SqlitePool) -> Result<Vec<EffectRecord>, StoreError> {
-    let rows: Vec<EffectRow> = sqlx::query_as::<_, EffectRow>(
-        "SELECT id, name, script, params FROM effects ORDER BY name",
-    )
-    .fetch_all(pool)
-    .await?;
-    rows.into_iter().map(from_row).collect()
+pub fn get_all(conn: &Connection) -> Result<Vec<EffectRecord>, StoreError> {
+    let mut stmt = conn.prepare("SELECT id, name, script, params FROM effects ORDER BY name")?;
+    let rows = stmt.query_map([], read_row)?;
+    rows.map(|r| from_row(r?)).collect()
 }
 
-pub async fn get_one(pool: &SqlitePool, id: &str) -> Result<EffectRecord, StoreError> {
-    let row: Option<EffectRow> =
-        sqlx::query_as::<_, EffectRow>("SELECT id, name, script, params FROM effects WHERE id = ?")
-            .bind(id)
-            .fetch_optional(pool)
-            .await?;
+pub fn get_one(conn: &Connection, id: &str) -> Result<EffectRecord, StoreError> {
+    let row = conn
+        .query_row(
+            "SELECT id, name, script, params FROM effects WHERE id = ?",
+            [id],
+            read_row,
+        )
+        .optional()?;
     from_row(row.ok_or(StoreError::NotFound)?)
 }
 
-pub async fn create(
-    pool: &SqlitePool,
+pub fn create(
+    conn: &Connection,
     name: &str,
     script: &str,
     params: &[ParamDef],
 ) -> Result<EffectRecord, StoreError> {
     let id = Uuid::new_v4().to_string();
     let params_json = serde_json::to_string(params)?;
-    sqlx::query("INSERT INTO effects (id, name, script, params) VALUES (?, ?, ?, ?)")
-        .bind(&id)
-        .bind(name)
-        .bind(script)
-        .bind(&params_json)
-        .execute(pool)
-        .await?;
-    get_one(pool, &id).await
+    conn.execute(
+        "INSERT INTO effects (id, name, script, params) VALUES (?, ?, ?, ?)",
+        params![id, name, script, params_json],
+    )?;
+    get_one(conn, &id)
 }
 
-pub async fn update(
-    pool: &SqlitePool,
+pub fn update(
+    conn: &Connection,
     id: &str,
     name: &str,
     script: &str,
     params: &[ParamDef],
 ) -> Result<EffectRecord, StoreError> {
     let params_json = serde_json::to_string(params)?;
-    let rows_affected =
-        sqlx::query("UPDATE effects SET name = ?, script = ?, params = ? WHERE id = ?")
-            .bind(name)
-            .bind(script)
-            .bind(&params_json)
-            .bind(id)
-            .execute(pool)
-            .await?
-            .rows_affected();
-
+    let rows_affected = conn.execute(
+        "UPDATE effects SET name = ?, script = ?, params = ? WHERE id = ?",
+        params![name, script, params_json, id],
+    )?;
     if rows_affected == 0 {
         return Err(StoreError::NotFound);
     }
-    get_one(pool, id).await
+    get_one(conn, id)
 }
 
-pub async fn delete(pool: &SqlitePool, id: &str) -> Result<(), StoreError> {
-    let rows_affected = sqlx::query("DELETE FROM effects WHERE id = ?")
-        .bind(id)
-        .execute(pool)
-        .await?
-        .rows_affected();
-
-    if rows_affected == 0 {
+pub fn delete(conn: &Connection, id: &str) -> Result<(), StoreError> {
+    if conn.execute("DELETE FROM effects WHERE id = ?", [id])? == 0 {
         return Err(StoreError::NotFound);
     }
     Ok(())
