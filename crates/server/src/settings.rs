@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
 use clap::Parser;
-use config::{Config, ConfigError, Environment, File};
 use drivers::DriverConfig;
+use lumehub_server::config_layers::{apply_env, merge};
 use mqtt::MqttConfig;
 use serde::{Deserialize, Serialize};
 
@@ -53,22 +53,26 @@ struct Args {
 }
 
 impl Settings {
-    pub fn new() -> Result<Self, ConfigError> {
+    pub fn new() -> Result<Self, String> {
         let args = Args::parse();
 
-        let s = Config::builder()
-            .add_source(config::File::from_str(
-                include_str!("../../../config/default.toml"),
-                config::FileFormat::Toml,
-            ))
-            .add_source(
-                File::with_name(&args.config.unwrap_or_else(|| "config.toml".to_string()))
-                    .required(false),
-            )
-            .add_source(Environment::with_prefix("LUMEHUB"))
-            .build()?;
+        let mut table: toml::Table = include_str!("../../../config/default.toml")
+            .parse()
+            .map_err(|e| format!("built-in defaults: {e}"))?;
 
-        let mut settings: Self = s.try_deserialize()?;
+        let path = args.config.unwrap_or_else(|| "config.toml".to_string());
+        match std::fs::read_to_string(&path) {
+            Ok(text) => merge(
+                &mut table,
+                text.parse().map_err(|e| format!("{path}: {e}"))?,
+            ),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(format!("{path}: {e}")),
+        }
+
+        apply_env(&mut table, "LUMEHUB", std::env::vars());
+
+        let mut settings: Self = table.try_into().map_err(|e| format!("{e}"))?;
         settings.config_dir = PathBuf::from(args.config_dir);
         settings.state_dir = PathBuf::from(args.state_dir);
         Ok(settings)

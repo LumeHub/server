@@ -35,7 +35,6 @@ mqtt        = { path = "crates/mqtt" }
 actix-web    = "4.11.0"
 chrono       = "0.4.42"
 clap         = { version = "4.5.49", features = ["derive", "env"] }
-config       = "0.15.18"
 hsv          = "0.1.1"
 include_dir  = "0.7"
 rhai         = { version = "1.24.0", features = ["sync"] }

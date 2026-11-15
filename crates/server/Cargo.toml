@@ -3,6 +3,9 @@ name = "lumehub-server"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+path = "src/lib.rs"
+
 [[bin]]
 name = "lumehub-server"
 path = "src/main.rs"
@@ -23,7 +26,7 @@ api-legacy  = { workspace = true }
 actix-web   = { workspace = true }
 chrono      = { workspace = true }
 clap        = { workspace = true }
-config      = { workspace = true }
+toml        = { workspace = true }
 serde       = { workspace = true }
 discovery   = { workspace = true }
 persistence = { workspace = true }
