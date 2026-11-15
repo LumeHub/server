@@ -51,6 +51,11 @@ pub async fn handle_load(ctx: &Ctx, id: &str) {
         Ok(()) => {
             ctx.runtime.reload_active();
             crate::publish::publish_active_layers(&ctx.client, &ctx.topics, &ctx.store).await;
+            // Keep HA's scene select in sync no matter who triggered the load.
+            if let Ok(scene) = ctx.store.get_scene(id).await {
+                crate::publish::publish_active_scene_state(&ctx.client, &ctx.topics, &scene.name)
+                    .await;
+            }
         }
         Err(e) => eprintln!("[mqtt] scenes/{id}/load error: {e}"),
     }

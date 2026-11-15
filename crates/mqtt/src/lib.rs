@@ -1,11 +1,11 @@
 mod client;
 mod discovery;
-mod publish;
 mod types;
 
 pub mod config;
 pub mod ctx;
 pub mod handlers;
+pub mod publish;
 pub mod topics;
 
 pub use config::MqttConfig;

@@ -93,3 +93,10 @@ fn custom_prefix() {
         Some("id1")
     );
 }
+
+#[test]
+fn active_scene_topics() {
+    let t = t();
+    assert_eq!(t.active_scene_state(), "lumehub/active_scene/state");
+    assert_eq!(t.active_scene_set(), "lumehub/active_scene/set");
+}

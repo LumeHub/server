@@ -80,6 +80,14 @@ impl Topics {
         format!("{}/active_layers/+/delete", self.prefix)
     }
 
+    // Active scene (HA select)
+    pub fn active_scene_state(&self) -> String {
+        format!("{}/active_scene/state", self.prefix)
+    }
+    pub fn active_scene_set(&self) -> String {
+        format!("{}/active_scene/set", self.prefix)
+    }
+
     // Effects
     pub fn effects(&self) -> String {
         format!("{}/effects", self.prefix)

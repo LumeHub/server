@@ -98,7 +98,7 @@ pub async fn route(ctx: &Ctx, topic: &str, payload: &[u8]) {
     }
 
     // Active scene select (HA)
-    if topic == format!("{}/active_scene/set", t.prefix) {
+    if topic == t.active_scene_set() {
         handle_active_scene_set(ctx, payload).await;
     }
 }
@@ -108,10 +108,9 @@ async fn handle_active_scene_set(ctx: &Ctx, payload: &[u8]) {
         Ok(s) => s.trim(),
         Err(_) => return,
     };
-    let state_topic = format!("{}/active_scene/state", ctx.topics.prefix);
     if name.is_empty() {
         active_layers::handle_clear(ctx).await;
-        crate::publish::publish_retained(&ctx.client, &state_topic, &"").await;
+        crate::publish::publish_active_scene_state(&ctx.client, &ctx.topics, "").await;
         return;
     }
     let scenes = match ctx.store.get_scenes().await {
@@ -122,10 +121,7 @@ async fn handle_active_scene_set(ctx: &Ctx, payload: &[u8]) {
         }
     };
     match scenes.into_iter().find(|s| s.name == name) {
-        Some(scene) => {
-            scenes::handle_load(ctx, &scene.id.clone()).await;
-            crate::publish::publish_retained(&ctx.client, &state_topic, &name).await;
-        }
+        Some(scene) => scenes::handle_load(ctx, &scene.id).await,
         None => eprintln!("[mqtt] active_scene/set: no scene named '{name}'"),
     }
 }

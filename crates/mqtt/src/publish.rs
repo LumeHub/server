@@ -80,6 +80,23 @@ pub async fn publish_all_initial(
     publish_effects(client, topics, store, builtins).await;
 }
 
+/// Home Assistant's MQTT select matches the raw payload against its options,
+/// so the active scene name must be sent as plain text, not JSON.
+pub fn active_scene_state_payload(name: &str) -> Vec<u8> {
+    name.as_bytes().to_vec()
+}
+
+pub async fn publish_active_scene_state(client: &AsyncClient, topics: &Topics, name: &str) {
+    let topic = topics.active_scene_state();
+    let payload = active_scene_state_payload(name);
+    if let Err(e) = client
+        .publish(&topic, QoS::AtLeastOnce, true, payload)
+        .await
+    {
+        eprintln!("[mqtt] publish error on {topic}: {e}");
+    }
+}
+
 pub async fn publish_retained<T: serde::Serialize>(client: &AsyncClient, topic: &str, value: &T) {
     match serde_json::to_vec(value) {
         Ok(payload) => {

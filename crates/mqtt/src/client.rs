@@ -152,7 +152,7 @@ async fn subscribe_all(client: &AsyncClient, topics: &Topics) {
         topics.effects_create(),
         topics.effects_update_wildcard(),
         topics.effects_delete_wildcard(),
-        format!("{}/active_scene/set", topics.prefix),
+        topics.active_scene_set(),
     ];
 
     for topic in &subs {

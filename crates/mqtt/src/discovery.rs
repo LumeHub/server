@@ -55,8 +55,8 @@ pub async fn publish_ha_discovery(
     let select_config = json!({
         "name": "Scene",
         "unique_id": format!("{device_id}_scene"),
-        "state_topic": format!("{}/active_scene/state", config.topic_prefix),
-        "command_topic": format!("{}/active_scene/set", config.topic_prefix),
+        "state_topic": topics.active_scene_state(),
+        "command_topic": topics.active_scene_set(),
         "options": scene_options,
         "device": device_info
     });
